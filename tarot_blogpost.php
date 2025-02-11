@@ -278,19 +278,61 @@ function display_text_settings() {
     echo '<tr>';
     echo '<th><label for="ai_blogpost_max_tokens">Max Tokens</label></th>';
     echo '<td>';
-    echo '<input type="number" name="ai_blogpost_max_tokens" id="ai_blogpost_max_tokens" value="' . esc_attr(get_cached_option('ai_blogpost_max_tokens', '1024')) . '">';
-    echo '<p class="description">Maximum length of generated text</p>';
+    echo '<input type="number" name="ai_blogpost_max_tokens" id="ai_blogpost_max_tokens" 
+        value="' . esc_attr(get_cached_option('ai_blogpost_max_tokens', '2048')) . '"
+        min="100" max="4096">'; // Set reasonable limits
+    echo '<p class="description">Maximum length of generated text (max 4096 for safe operation)</p>';
     echo '</td>';
     echo '</tr>';
 
-    // System Role
+    // System Role with better description
     echo '<tr>';
     echo '<th><label for="ai_blogpost_role">System Role</label></th>';
     echo '<td>';
     echo '<textarea name="ai_blogpost_role" id="ai_blogpost_role" rows="3" class="large-text code">';
-    echo esc_textarea(get_cached_option('ai_blogpost_role', 'Write for a tarot website a SEO blogpost with the [categorie] as keyword'));
+    echo esc_textarea(get_cached_option('ai_blogpost_role', 'You are a professional blog writer. Write engaging, SEO-friendly content about the given topic.'));
     echo '</textarea>';
-    echo '<p class="description">System role instruction for the AI</p>';
+    echo '<p class="description">Define the AI\'s role and writing style</p>';
+    echo '</td>';
+    echo '</tr>';
+    
+    // Simplified Prompt Template
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_prompt">Content Template</label></th>';
+    echo '<td>';
+    echo '<textarea name="ai_blogpost_prompt" id="ai_blogpost_prompt" rows="4" class="large-text code">';
+    echo esc_textarea(get_cached_option('ai_blogpost_prompt', 
+        "Write a blog post about [topic]. Structure the content as follows:
+
+||Title||: Create an engaging, SEO-friendly title
+
+||Content||: Write the main content here, using proper HTML structure:
+- Use <article> tags to wrap the content
+- Use <h1>, <h2> for headings
+- Use <p> for paragraphs
+- Include relevant subheadings
+- Add a strong conclusion
+
+||Category||: Suggest the most appropriate category for this post"));
+    echo '</textarea>';
+    
+    // Add template guide
+    echo '<div class="template-guide" style="margin-top: 10px; padding: 15px; background: #f8f9fa; border: 1px solid #e2e4e7; border-radius: 4px;">';
+    echo '<h4 style="margin-top: 0;">Content Structure Guide</h4>';
+    echo '<p class="description">Use these section markers to structure the content:</p>';
+    echo '<ul style="margin: 10px 0 0 20px; list-style-type: disc;">';
+    echo '<li><code>||Title||:</code> - The blog post title</li>';
+    echo '<li><code>||Content||:</code> - The main content (wrapped in <code>&lt;article&gt;</code> tags)</li>';
+    echo '<li><code>||Category||:</code> - The suggested category</li>';
+    echo '</ul>';
+    echo '<p class="description" style="margin-top: 10px;"><strong>Tips:</strong></p>';
+    echo '<ul style="margin: 5px 0 0 20px; list-style-type: disc;">';
+    echo '<li>Use [topic] in your prompt to reference the selected category</li>';
+    echo '<li>Add specific instructions about tone, style, or length in the System Role</li>';
+    echo '<li>Use HTML tags for proper content structure</li>';
+    echo '<li>Include SEO best practices in your instructions</li>';
+    echo '</ul>';
+    echo '</div>';
     echo '</td>';
     echo '</tr>';
     
@@ -489,18 +531,12 @@ function fetch_ai_response($correspondences) {
 }
 
 function prepare_ai_prompt($correspondences) {
-    $base_prompt = "Schrijf een Nederlandse blog over [categorie]. Gebruik secties:
-||Title||:
-||Content||:
-||Category||:[categorie]
-Schrijf de inhoud van de content sectie binnen de <article> </article> tags en gebruik <p> en <h1> <h2>.";
-
-    $prompt = $base_prompt;
-    foreach ($correspondences as $key => $value) {
-        $prompt = str_replace("[$key]", $value, $prompt);
-    }
+    $base_prompt = get_cached_option('ai_blogpost_prompt');
     
-    return str_replace('[datum]', date_i18n(get_option('date_format')), $prompt);
+    // Simply replace [topic] with the category
+    $prompt = str_replace('[topic]', $correspondences['categorie'], $base_prompt);
+    
+    return $prompt;
 }
 
 function prepare_dalle_prompt($correspondences) {
@@ -525,7 +561,7 @@ function send_ai_request($prompt) {
                     array("role" => "user", "content" => $prompt)
                 ),
                 'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
-                'max_tokens' => (int)get_cached_option('ai_blogpost_max_tokens', 1024)
+                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096) // Ensure safe limit
             )),
             'headers' => array(
                 'Content-Type' => 'application/json',
@@ -700,85 +736,94 @@ function fetch_dalle_image_from_text($dalle_prompt) {
 // ------------------ CREATE POST ------------------
 function create_ai_blogpost() {
     try {
+        ai_blogpost_debug_log('Starting blog post creation');
+        
         $correspondences = ai_blogpost_get_correspondences();
+        ai_blogpost_debug_log('Got correspondences:', $correspondences);
         
-        // Add default category if not set
-        if (!isset($correspondences['categorie'])) {
-            $categories = explode("\n", get_cached_option('ai_blogpost_custom_categories', 'tarot'));
-            $correspondences['categorie'] = trim($categories[array_rand($categories)]);
-        }
-        
-        // Get DALL-E prompt template ready (if enabled)
-        if (get_cached_option('ai_blogpost_dalle_enabled', 0)) {
-            $dalle_prompt = prepare_dalle_prompt($correspondences);
-        }
-        
-        // Generate text content with single API call
+        // Generate text content
         $ai_result = fetch_ai_response($correspondences);
         if (!$ai_result) {
             throw new Exception('No AI result received');
         }
+        ai_blogpost_debug_log('Got AI response:', $ai_result);
 
         $parsed_content = parse_ai_content($ai_result['content']);
-        
-        // Use category from correspondences if parsed category is empty
-        $category = !empty($parsed_content['category']) ? 
-            $parsed_content['category'] : 
-            $correspondences['categorie'];
-        
-        // Create post first
+        if (empty($parsed_content['title']) || empty($parsed_content['content'])) {
+            throw new Exception('Failed to parse AI content: ' . print_r($parsed_content, true));
+        }
+        ai_blogpost_debug_log('Parsed content:', $parsed_content);
+
+        // Create post
         $post_data = array(
             'post_title' => wp_strip_all_tags($parsed_content['title']),
             'post_content' => wpautop($parsed_content['content']),
             'post_status' => 'publish',
             'post_author' => 1,
-            'post_category' => array(get_cat_ID($category) ?: 1)
+            'post_category' => array(get_cat_ID($correspondences['categorie']) ?: 1)
         );
+        ai_blogpost_debug_log('Preparing to create post with data:', $post_data);
 
-        $post_id = wp_insert_post($post_data, true);
-        
+        $post_id = wp_insert_post($post_data);
         if (is_wp_error($post_id)) {
             throw new Exception('Failed to create post: ' . $post_id->get_error_message());
         }
+        ai_blogpost_debug_log('Successfully created post with ID:', $post_id);
 
-        // Handle DALL-E image separately if enabled
+        // Handle DALL-E image if enabled
         if (get_cached_option('ai_blogpost_dalle_enabled', 0)) {
-            error_log('Using DALL-E prompt: ' . $dalle_prompt);
-            
+            ai_blogpost_debug_log('DALL-E is enabled, generating image');
+            $dalle_prompt = prepare_dalle_prompt($correspondences);
             $attach_id = fetch_dalle_image_from_text($dalle_prompt);
             if ($attach_id) {
                 set_post_thumbnail($post_id, $attach_id);
-                error_log('Featured image set for post ID: ' . $post_id);
+                ai_blogpost_debug_log('Added featured image:', $attach_id);
             }
         }
 
         return $post_id;
     } catch (Exception $e) {
-        error_log('Error in create_ai_blogpost: ' . $e->getMessage());
-        return null;
+        ai_blogpost_debug_log('Error in create_ai_blogpost:', $e->getMessage());
+        throw $e;
     }
 }
 
 function parse_ai_content($ai_content) {
+    // Debug log the raw content
+    ai_blogpost_debug_log('Raw AI Content:', $ai_content);
+
     $patterns = array(
         'title' => '/\|\|Title\|\|:\s*(.*?)(?=\|\|Content\|\|:)/s',
         'content' => '/\|\|Content\|\|:\s*(.*?)(?=\|\|Category\|\|:)/s',
-        'category' => '/\|\|Category\|\|:\s*(.*?)(?=\|\|DALL_E_Prompt\|\|:|$)/s',
-        'dalle_prompt' => '/\|\|DALL_E_Prompt\|\|:\s*(.*?)$/s'
+        'category' => '/\|\|Category\|\|:\s*(.*?)$/s'
     );
 
     $parsed = array();
     foreach ($patterns as $key => $pattern) {
         if (preg_match($pattern, $ai_content, $matches)) {
             $parsed[$key] = trim($matches[1]);
+            ai_blogpost_debug_log("Parsed {$key}:", $parsed[$key]);
         } else {
-            error_log("Failed to parse {$key} from AI response");
-            $parsed[$key] = $key === 'title' ? 'AI-Generated Post' : '';
+            ai_blogpost_debug_log("Failed to parse {$key} from AI response");
+            // Set default values if parsing fails
+            switch ($key) {
+                case 'title':
+                    $parsed[$key] = 'AI-Generated Post';
+                    break;
+                case 'content':
+                    $parsed[$key] = '<article><p>Content generation failed</p></article>';
+                    break;
+                case 'category':
+                    $parsed[$key] = 'Uncategorized';
+                    break;
+            }
         }
     }
 
-    // Debug log
-    error_log('Parsed Content: ' . print_r($parsed, true));
+    // Ensure content is wrapped in article tags
+    if (!empty($parsed['content']) && !preg_match('/<article>.*<\/article>/s', $parsed['content'])) {
+        $parsed['content'] = '<article>' . $parsed['content'] . '</article>';
+    }
 
     return $parsed;
 }
@@ -858,48 +903,68 @@ function display_api_logs($type) {
     $filtered_logs = array_filter($logs, function($log) use ($type) {
         return $log['type'] === $type;
     });
-    $filtered_logs = array_slice($filtered_logs, -5);
+    $filtered_logs = array_reverse(array_slice($filtered_logs, -5)); // Reverse to show newest first
     
     if (empty($filtered_logs)) {
         echo '<div style="padding: 20px; background: #f8f9fa; border-radius: 4px; text-align: center;">';
         echo "<p style='margin: 0;'>No {$type} communications logged yet.</p>";
         echo '</div>';
-    } else {
-        echo '<div style="border: 1px solid #e2e4e7; border-radius: 4px; overflow: hidden;">';
-        echo '<table class="widefat" style="margin: 0; border: none;">
-            <thead>
-                <tr>
-                    <th style="width: 30%;">Time</th>
-                    <th style="width: 20%;">Status</th>
-                    <th style="width: 50%;">Details</th>
-                </tr>
-            </thead>
-            <tbody>';
+        return;
+    }
+
+    echo '<div class="log-container">';
+    echo '<table class="log-table">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody>';
+    
+    foreach ($filtered_logs as $log) {
+        $status = isset($log['data']['status']) ? $log['data']['status'] : ($log['success'] ? 'Success' : 'Failed');
+        $details = '';
         
-        foreach ($filtered_logs as $log) {
-            $status_color = $log['success'] ? '#46b450' : '#dc3232';
-            $log_id = 'log_' . $log['type'] . '_' . $log['time'];
-            echo sprintf(
-                '<tr>
-                    <td>%s</td>
-                    <td><span style="color: %s; font-weight: 500;">%s</span></td>
-                    <td>
-                        <button type="button" class="button button-small" onclick="toggleDetails(\'%s\')">Show Details</button>
-                        <div id="%s" style="display:none; margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-family: monospace; font-size: 12px;">%s</div>
-                    </td>
-                </tr>',
-                esc_html(date('Y-m-d H:i:s', $log['time'])),
-                $status_color,
-                $log['success'] ? 'Success' : 'Failed',
-                esc_attr($log_id),
-                esc_attr($log_id),
-                esc_html(print_r($log['data'], true))
-            );
+        // Format details based on data type
+        if (isset($log['data']['prompt'])) {
+            $details .= "Prompt: " . esc_html($log['data']['prompt']) . "\n";
+        }
+        if (isset($log['data']['response'])) {
+            $details .= "Response: " . esc_html(json_encode($log['data']['response'], JSON_PRETTY_PRINT));
+        }
+        if (isset($log['data']['error'])) {
+            $details .= "Error: " . esc_html($log['data']['error']);
         }
         
-        echo '</tbody></table>';
-        echo '</div>';
+        echo sprintf(
+            '<tr>
+                <td>%s</td>
+                <td><span class="status-%s">%s</span></td>
+                <td>
+                    <pre class="log-details">%s</pre>
+                </td>
+            </tr>',
+            date('Y-m-d H:i:s', $log['time']),
+            $log['success'] ? 'success' : 'error',
+            esc_html($status),
+            $details
+        );
     }
+    
+    echo '</tbody></table></div>';
+
+    // Add styling
+    echo '<style>
+        .log-container { margin-bottom: 20px; }
+        .log-table { width: 100%; border-collapse: collapse; }
+        .log-table th, .log-table td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
+        .log-table th { background: #f8f9fa; }
+        .status-success { color: #46b450; }
+        .status-error { color: #dc3232; }
+        .log-details { margin: 0; white-space: pre-wrap; font-size: 12px; max-height: 100px; overflow-y: auto; }
+    </style>';
 }
 
 // Add this function for clearing logs
@@ -911,3 +976,11 @@ function ai_blogpost_clear_logs() {
     }
 }
 add_action('admin_init', 'ai_blogpost_clear_logs');
+
+function ai_blogpost_debug_log($message, $data = null) {
+    $log = date('Y-m-d H:i:s') . ' - ' . $message;
+    if ($data !== null) {
+        $log .= "\n" . print_r($data, true);
+    }
+    error_log($log);
+}
