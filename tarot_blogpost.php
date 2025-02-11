@@ -35,128 +35,364 @@ function ai_blogpost_admin_menu() {
 add_action('admin_menu', 'ai_blogpost_admin_menu');
 
 function ai_blogpost_admin_page() {
-    echo '<h1>AI Blogpost Settings</h1>';
+    echo '<div class="wrap ai-blogpost-dashboard">';
+    echo '<h1>AI Blogpost Dashboard</h1>';
+    
+    // Settings Form
+    echo '<div class="dashboard-grid">';
+    
+    // Left column - Settings
+    echo '<div class="settings-column">';
     echo '<form method="post" action="options.php">';
     settings_fields('ai_blogpost_settings');
     do_settings_sections('ai_blogpost_settings');
-    echo '<table class="form-table">';
-
-    // Tekst API
-    echo '<tr><th>OpenAI Tekst API Key</th><td>';
-    echo '<input type="text" name="ai_blogpost_api_key" value="'.esc_attr(get_option('ai_blogpost_api_key')).'">';
-    echo '<p class="description">Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI API Keys</a>. ';
-    echo 'New to OpenAI? <a href="https://platform.openai.com/signup" target="_blank">Sign up here</a>.</p></td></tr>';
-    echo '<tr><th>OpenAI Tekst Model</th><td><input type="text" name="ai_blogpost_model" value="'.esc_attr(get_option('ai_blogpost_model')).'"><p>Bijv: gpt-4</p></td></tr>';
-    echo '<tr><th>AI Prompt (tekst)</th><td><textarea name="ai_blogpost_prompt" rows="10" cols="80">'.esc_textarea(get_option('ai_blogpost_prompt')).'</textarea><p>Gebruik placeholders [categorie], [datum], [planeet], [element], [kleur], [dier], [getal], [kristal], [kruid], [chakra], [boom], [tarot], [seizoen], [wereld], [alchemie]</p></td></tr>';
-    echo '<tr><th>Post Frequency</th><td><input type="radio" name="ai_blogpost_post_frequency" value="daily" '.checked('daily', get_option('ai_blogpost_post_frequency'), false).'> Daily <input type="radio" name="ai_blogpost_post_frequency" value="weekly" '.checked('weekly', get_option('ai_blogpost_post_frequency'), false).'> Weekly</td></tr>';
-    echo '<tr><th>Role</th><td><textarea name="ai_blogpost_role" rows="4" cols="50">'.esc_textarea(get_option('ai_blogpost_role')).'</textarea></td></tr>';
-    echo '<tr><th>Categories</th><td><textarea name="ai_blogpost_custom_categories" rows="4" cols="50">'.esc_textarea(get_option('ai_blogpost_custom_categories')).'</textarea><p>Één per regel</p></td></tr>';
-    echo '<tr><th>Temperature</th><td><input type="number" name="ai_blogpost_temperature" min="0" max="1" step="0.1" value="'.esc_attr(get_option('ai_blogpost_temperature')).'"></td></tr>';
-    echo '<tr><th>Max Tokens</th><td><input type="number" name="ai_blogpost_max_tokens" min="1" max="16000" value="'.esc_attr(get_option('ai_blogpost_max_tokens')).'"></td></tr>';
-
-    // DALL·E settings
-    echo '<tr><th colspan="2"><h2>DALL·E Instellingen (uitgelichte afbeelding)</h2></th></tr>';
-    echo '<tr><th>Uitgelichte afbeelding genereren?</th><td><input type="checkbox" name="ai_blogpost_dalle_enabled" value="1" '.checked(1,get_option('ai_blogpost_dalle_enabled'),false).'> Ja</td></tr>';
-    echo '<tr><th>DALL·E Prompt Template</th><td>';
-    echo '<textarea name="ai_blogpost_dalle_prompt_template" rows="4" cols="80">'.esc_textarea(get_option('ai_blogpost_dalle_prompt_template', 'Create a mystical and ethereal [style] illustration featuring symbolic elements related to [categorie], with [kleur] color palette in a [seizoen] atmosphere.')).'</textarea>';
-    echo '<p class="description">Template voor DALL·E afbeelding prompt. Gebruik placeholders: [categorie], [kleur], [style], [seizoen], etc.</p></td></tr>';
-    echo '<tr><th>DALL·E API Key</th><td>';
-    echo '<input type="text" name="ai_blogpost_dalle_api_key" value="'.esc_attr(get_option('ai_blogpost_dalle_api_key')).'">';
-    echo '<p class="description">Use your OpenAI API key. Make sure you have <a href="https://platform.openai.com/account/billing/overview" target="_blank">billing enabled</a> ';
-    echo 'and sufficient credits for image generation.</p></td></tr>';
-    echo '<tr><th>DALL·E Model</th><td><input type="text" name="ai_blogpost_dalle_model" value="'.esc_attr(get_option('ai_blogpost_dalle_model')).'"><p>Bijv: dall-e-3 (indien ondersteund)</p></td></tr>';
-    echo '<tr><th>DALL·E Afbeeldingsformaat</th><td><select name="ai_blogpost_dalle_size">';
-    $selected_size = get_option('ai_blogpost_dalle_size','1024x1024');
-    $sizes = array('1024x1024','512x512','256x256');
-    foreach($sizes as $sz) echo '<option value="'.$sz.'" '.selected($selected_size,$sz,false).'>'.$sz.'</option>';
-    echo '</select></td></tr>';
-
-    echo '<tr><th>DALL·E Style</th><td>';
-    $dalle_style = get_option('ai_blogpost_dalle_style','');
-    echo '<select name="ai_blogpost_dalle_style">';
-    echo '<option value="" '.selected($dalle_style,'',false).'>Geen</option>';
-    echo '<option value="vivid" '.selected($dalle_style,'vivid',false).'>Vivid</option>';
-    echo '<option value="natural" '.selected($dalle_style,'natural',false).'>Natural</option>';
-    echo '</select></td></tr>';
-
-    echo '<tr><th>DALL·E Quality</th><td>';
-    $dalle_quality = get_option('ai_blogpost_dalle_quality','');
-    echo '<select name="ai_blogpost_dalle_quality">';
-    echo '<option value="" '.selected($dalle_quality,'',false).'>Standaard</option>';
-    echo '<option value="hd" '.selected($dalle_quality,'hd',false).'>HD</option>';
-    echo '</select></td></tr>';
-
-    echo '</table>';
-    submit_button();
+    
+    // General Settings
+    echo '<div class="settings-group">';
+    echo '<h2>Schedule Settings</h2>';
+    display_general_settings();
+    echo '</div>';
+    
+    // Text Generation Settings
+    echo '<div class="settings-group">';
+    echo '<h2>OpenAI Text Generation</h2>';
+    display_text_settings();
+    echo '</div>';
+    
+    // Image Generation Settings
+    echo '<div class="settings-group">';
+    echo '<h2>DALL·E Image Generation</h2>';
+    display_image_settings();
+    echo '</div>';
+    
+    submit_button('Save Settings');
     echo '</form>';
-
-    echo '<form method="post">';
-    echo '<input type="submit" name="test_ai_blogpost" class="button button-primary" value="Run Test Post">';
+    echo '</div>'; // Close settings-column
+    
+    // Right column - Status and Test
+    echo '<div class="status-column">';
+    
+    // Test Post Section
+    echo '<div class="test-post-section">';
+    echo '<div class="test-post-header">';
+    echo '<h2>Test Generation</h2>';
+    echo '<form method="post" style="display:inline-block;">';
+    echo '<input type="submit" name="test_ai_blogpost" class="button button-primary" value="Generate Test Post">';
     echo '</form>';
-
+    echo '</div>';
+    
+    // Next scheduled post info
     $next_post_time = wp_next_scheduled('ai_blogpost_cron_hook');
-    if($next_post_time){
-        $next_post_time_formatted = get_date_from_gmt(date('Y-m-d H:i:s',$next_post_time), 'Y-m-d H:i:s');
-        echo '<p>Next Post Time: '.$next_post_time_formatted.'</p>';
+    if ($next_post_time) {
+        echo '<div class="next-post-info">';
+        echo '<span class="dashicons dashicons-calendar-alt"></span> ';
+        echo 'Next scheduled post: ' . get_date_from_gmt(
+            date('Y-m-d H:i:s', $next_post_time), 
+            'F j, Y @ H:i'
+        );
+        echo '</div>';
     }
-
-    // Add Status Panel with improved styling
-    echo '<div class="ai-status-panel" style="margin-top: 30px; padding: 20px; background: #fff; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">';
+    echo '</div>'; // Close test-post-section
     
-    // Add header with title and buttons
-    echo '<div class="status-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #ccd0d4;">';
-    echo '<h2 style="margin: 0;">AI Generation Status</h2>';
-    
-    // Action buttons group
-    echo '<div class="status-actions" style="display: flex; gap: 10px;">';
-    // Clear Logs form
+    // Status Panel
+    echo '<div class="status-panel">';
+    echo '<div class="status-header">';
+    echo '<h2>Generation Status</h2>';
+    echo '<div class="status-actions">';
     echo '<form method="post" style="display: inline;">';
     wp_nonce_field('clear_ai_logs_nonce');
     echo '<input type="submit" name="clear_ai_logs" class="button" value="Clear Logs">';
     echo '</form>';
-    // Refresh button
     echo '<button type="button" class="button" onclick="window.location.reload();">Refresh Status</button>';
     echo '</div>';
     echo '</div>';
     
-    // Success message for cleared logs
-    if (isset($_GET['logs_cleared'])) {
-        echo '<div class="notice notice-success is-dismissible" style="margin: 0 0 20px 0;"><p>Status logs cleared successfully!</p></div>';
-    }
-    
-    // Status sections with grid layout
-    echo '<div class="status-sections" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">';
-    
     // Text Generation Status
-    echo '<div class="status-section">';
-    echo '<h3 style="margin-top: 0;">Text Generation</h3>';
+    echo '<h3>Text Generation</h3>';
     display_api_logs('Text Generation');
-    echo '</div>';
     
     // Image Generation Status
-    echo '<div class="status-section">';
-    echo '<h3 style="margin-top: 0;">Image Generation</h3>';
+    echo '<h3 style="margin-top: 20px;">Image Generation</h3>';
     display_api_logs('Image Generation');
-    echo '</div>';
     
-    echo '</div>'; // Close status-sections
+    echo '</div>'; // Close status-panel
+    echo '</div>'; // Close status-column
+    
+    echo '</div>'; // Close dashboard-grid
+    echo '</div>'; // Close wrap
 
-    // Add improved JavaScript for toggling details
-    echo '<script>
-    function toggleDetails(id) {
-        var element = document.getElementById(id);
-        var button = document.querySelector(`button[onclick="toggleDetails(\'${id}\')"]`);
-        if (element.style.display === "none") {
-            element.style.display = "block";
-            button.textContent = "Hide Details";
-        } else {
-            element.style.display = "none";
-            button.textContent = "Show Details";
+    // Add dashboard styling
+    echo '<style>
+        .ai-blogpost-dashboard {
+            margin: 20px;
         }
-    }
-    </script>';
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .settings-column,
+        .status-column {
+            background: #fff;
+            padding: 20px;
+            border: 1px solid #ccd0d4;
+            box-shadow: 0 1px 1px rgba(0,0,0,.04);
+        }
+        .settings-group {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        .settings-group:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+        .settings-group h2 {
+            margin-top: 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .test-post-section {
+            margin-bottom: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .test-post-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .test-post-header h2 {
+            margin: 0;
+        }
+        .next-post-info {
+            margin-top: 10px;
+            color: #666;
+        }
+        .status-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .status-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .log-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .log-table th,
+        .log-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .log-table tr:hover {
+            background: #f8f9fa;
+        }
+        .description {
+            color: #666;
+            font-style: italic;
+            margin-top: 5px;
+        }
+        @media screen and (max-width: 1200px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>';
+}
+
+// Add these new helper functions for tab content
+function display_general_settings() {
+    echo '<table class="form-table">';
     
-    echo '</div>'; // Close ai-status-panel
+    // Post Frequency
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_post_frequency">Post Frequency</label></th>';
+    echo '<td>';
+    echo '<select name="ai_blogpost_post_frequency" id="ai_blogpost_post_frequency">';
+    $frequency = get_cached_option('ai_blogpost_post_frequency', 'daily');
+    echo '<option value="daily" ' . selected($frequency, 'daily', false) . '>Daily</option>';
+    echo '<option value="weekly" ' . selected($frequency, 'weekly', false) . '>Weekly</option>';
+    echo '</select>';
+    echo '<p class="description">How often should new posts be generated?</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // Custom Categories
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_custom_categories">Categories</label></th>';
+    echo '<td>';
+    echo '<textarea name="ai_blogpost_custom_categories" id="ai_blogpost_custom_categories" rows="5" class="large-text code">';
+    echo esc_textarea(get_cached_option('ai_blogpost_custom_categories', 'tarot'));
+    echo '</textarea>';
+    echo '<p class="description">Enter categories (one per line) that will be used for post generation</p>';
+    echo '</td>';
+    echo '</tr>';
+    
+    echo '</table>';
+}
+
+function display_text_settings() {
+    echo '<table class="form-table">';
+    
+    // OpenAI API Key
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_api_key">OpenAI API Key</label></th>';
+    echo '<td>';
+    echo '<input type="password" name="ai_blogpost_api_key" id="ai_blogpost_api_key" class="regular-text" value="' . esc_attr(get_cached_option('ai_blogpost_api_key')) . '">';
+    echo '<p class="description">Your OpenAI API key for text generation</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // Model Selection
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_model">GPT Model</label></th>';
+    echo '<td>';
+    echo '<select name="ai_blogpost_model" id="ai_blogpost_model">';
+    $model = get_cached_option('ai_blogpost_model', 'gpt-4');
+    $models = array('gpt-4', 'gpt-3.5-turbo');
+    foreach ($models as $m) {
+        echo '<option value="' . esc_attr($m) . '" ' . selected($model, $m, false) . '>' . esc_html($m) . '</option>';
+    }
+    echo '</select>';
+    echo '</td>';
+    echo '</tr>';
+
+    // Temperature
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_temperature">Temperature</label></th>';
+    echo '<td>';
+    echo '<input type="number" step="0.1" min="0" max="2" name="ai_blogpost_temperature" id="ai_blogpost_temperature" value="' . esc_attr(get_cached_option('ai_blogpost_temperature', '0.7')) . '">';
+    echo '<p class="description">Controls randomness (0 = deterministic, 2 = very random)</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // Max Tokens
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_max_tokens">Max Tokens</label></th>';
+    echo '<td>';
+    echo '<input type="number" name="ai_blogpost_max_tokens" id="ai_blogpost_max_tokens" value="' . esc_attr(get_cached_option('ai_blogpost_max_tokens', '1024')) . '">';
+    echo '<p class="description">Maximum length of generated text</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // System Role
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_role">System Role</label></th>';
+    echo '<td>';
+    echo '<textarea name="ai_blogpost_role" id="ai_blogpost_role" rows="3" class="large-text code">';
+    echo esc_textarea(get_cached_option('ai_blogpost_role', 'Write for a tarot website a SEO blogpost with the [categorie] as keyword'));
+    echo '</textarea>';
+    echo '<p class="description">System role instruction for the AI</p>';
+    echo '</td>';
+    echo '</tr>';
+    
+    echo '</table>';
+}
+
+function display_image_settings() {
+    echo '<table class="form-table">';
+    
+    // Enable DALL-E
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_dalle_enabled">Enable DALL-E</label></th>';
+    echo '<td>';
+    echo '<input type="checkbox" name="ai_blogpost_dalle_enabled" id="ai_blogpost_dalle_enabled" value="1" ' . checked(get_cached_option('ai_blogpost_dalle_enabled', 0), 1, false) . '>';
+    echo '<p class="description">Enable DALL-E image generation for posts</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // DALL-E API Key
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_dalle_api_key">DALL-E API Key</label></th>';
+    echo '<td>';
+    echo '<input type="password" name="ai_blogpost_dalle_api_key" id="ai_blogpost_dalle_api_key" class="regular-text" value="' . esc_attr(get_cached_option('ai_blogpost_dalle_api_key')) . '">';
+    echo '<p class="description">Your OpenAI API key for DALL-E (can be same as text generation)</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // DALL-E Model
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_dalle_model">DALL-E Model</label></th>';
+    echo '<td>';
+    echo '<select name="ai_blogpost_dalle_model" id="ai_blogpost_dalle_model">';
+    $model = get_cached_option('ai_blogpost_dalle_model', 'dall-e-3');
+    $models = array('dall-e-3', 'dall-e-2');
+    foreach ($models as $m) {
+        echo '<option value="' . esc_attr($m) . '" ' . selected($model, $m, false) . '>' . esc_html($m) . '</option>';
+    }
+    echo '</select>';
+    echo '</td>';
+    echo '</tr>';
+
+    // Image Size
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_dalle_size">Image Size</label></th>';
+    echo '<td>';
+    echo '<select name="ai_blogpost_dalle_size" id="ai_blogpost_dalle_size">';
+    $size = get_cached_option('ai_blogpost_dalle_size', '1024x1024');
+    $sizes = array('1024x1024', '1024x1792', '1792x1024');
+    foreach ($sizes as $s) {
+        echo '<option value="' . esc_attr($s) . '" ' . selected($size, $s, false) . '>' . esc_html($s) . '</option>';
+    }
+    echo '</select>';
+    echo '</td>';
+    echo '</tr>';
+
+    // Style
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_dalle_style">Style</label></th>';
+    echo '<td>';
+    echo '<select name="ai_blogpost_dalle_style" id="ai_blogpost_dalle_style">';
+    $style = get_cached_option('ai_blogpost_dalle_style', 'vivid');
+    $styles = array('vivid' => 'Vivid', 'natural' => 'Natural');
+    foreach ($styles as $key => $label) {
+        echo '<option value="' . esc_attr($key) . '" ' . selected($style, $key, false) . '>' . esc_html($label) . '</option>';
+    }
+    echo '</select>';
+    echo '</td>';
+    echo '</tr>';
+
+    // Quality
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_dalle_quality">Quality</label></th>';
+    echo '<td>';
+    echo '<select name="ai_blogpost_dalle_quality" id="ai_blogpost_dalle_quality">';
+    $quality = get_cached_option('ai_blogpost_dalle_quality', 'standard');
+    $qualities = array('standard' => 'Standard', 'hd' => 'HD');
+    foreach ($qualities as $key => $label) {
+        echo '<option value="' . esc_attr($key) . '" ' . selected($quality, $key, false) . '>' . esc_html($label) . '</option>';
+    }
+    echo '</select>';
+    echo '</td>';
+    echo '</tr>';
+
+    // Prompt Template
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_dalle_prompt_template">Prompt Template</label></th>';
+    echo '<td>';
+    echo '<textarea name="ai_blogpost_dalle_prompt_template" id="ai_blogpost_dalle_prompt_template" rows="3" class="large-text code">';
+    echo esc_textarea(get_cached_option('ai_blogpost_dalle_prompt_template', 
+        'Create a mystical and ethereal tarot-inspired digital art featuring [categorie] symbolism, with magical elements in a dreamlike atmosphere.'));
+    echo '</textarea>';
+    echo '<p class="description">Template for generating DALL-E prompts. Use [categorie] for category placeholder.</p>';
+    echo '</td>';
+    echo '</tr>';
+    
+    echo '</table>';
+}
+
+function display_status_panel() {
+    echo '<div class="status-panel">';
+    // ... (existing status panel code with improved styling)
+    echo '</div>';
 }
 
 // Test post handler with static flag
