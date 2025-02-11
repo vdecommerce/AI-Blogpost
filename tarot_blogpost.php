@@ -24,6 +24,7 @@ function ai_blogpost_initialize_settings() {
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_style');
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_quality');
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_model');
+    register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_prompt_template');
 }
 add_action('admin_init', 'ai_blogpost_initialize_settings');
 
@@ -41,7 +42,10 @@ function ai_blogpost_admin_page() {
     echo '<table class="form-table">';
 
     // Tekst API
-    echo '<tr><th>OpenAI Tekst API Key</th><td><input type="text" name="ai_blogpost_api_key" value="'.esc_attr(get_option('ai_blogpost_api_key')).'"></td></tr>';
+    echo '<tr><th>OpenAI Tekst API Key</th><td>';
+    echo '<input type="text" name="ai_blogpost_api_key" value="'.esc_attr(get_option('ai_blogpost_api_key')).'">';
+    echo '<p class="description">Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI API Keys</a>. ';
+    echo 'New to OpenAI? <a href="https://platform.openai.com/signup" target="_blank">Sign up here</a>.</p></td></tr>';
     echo '<tr><th>OpenAI Tekst Model</th><td><input type="text" name="ai_blogpost_model" value="'.esc_attr(get_option('ai_blogpost_model')).'"><p>Bijv: gpt-4</p></td></tr>';
     echo '<tr><th>AI Prompt (tekst)</th><td><textarea name="ai_blogpost_prompt" rows="10" cols="80">'.esc_textarea(get_option('ai_blogpost_prompt')).'</textarea><p>Gebruik placeholders [categorie], [datum], [planeet], [element], [kleur], [dier], [getal], [kristal], [kruid], [chakra], [boom], [tarot], [seizoen], [wereld], [alchemie]</p></td></tr>';
     echo '<tr><th>Post Frequency</th><td><input type="radio" name="ai_blogpost_post_frequency" value="daily" '.checked('daily', get_option('ai_blogpost_post_frequency'), false).'> Daily <input type="radio" name="ai_blogpost_post_frequency" value="weekly" '.checked('weekly', get_option('ai_blogpost_post_frequency'), false).'> Weekly</td></tr>';
@@ -53,7 +57,13 @@ function ai_blogpost_admin_page() {
     // DALL·E settings
     echo '<tr><th colspan="2"><h2>DALL·E Instellingen (uitgelichte afbeelding)</h2></th></tr>';
     echo '<tr><th>Uitgelichte afbeelding genereren?</th><td><input type="checkbox" name="ai_blogpost_dalle_enabled" value="1" '.checked(1,get_option('ai_blogpost_dalle_enabled'),false).'> Ja</td></tr>';
-    echo '<tr><th>DALL·E API Key</th><td><input type="text" name="ai_blogpost_dalle_api_key" value="'.esc_attr(get_option('ai_blogpost_dalle_api_key')).'"></td></tr>';
+    echo '<tr><th>DALL·E Prompt Template</th><td>';
+    echo '<textarea name="ai_blogpost_dalle_prompt_template" rows="4" cols="80">'.esc_textarea(get_option('ai_blogpost_dalle_prompt_template', 'Create a mystical and ethereal [style] illustration featuring symbolic elements related to [categorie], with [kleur] color palette in a [seizoen] atmosphere.')).'</textarea>';
+    echo '<p class="description">Template voor DALL·E afbeelding prompt. Gebruik placeholders: [categorie], [kleur], [style], [seizoen], etc.</p></td></tr>';
+    echo '<tr><th>DALL·E API Key</th><td>';
+    echo '<input type="text" name="ai_blogpost_dalle_api_key" value="'.esc_attr(get_option('ai_blogpost_dalle_api_key')).'">';
+    echo '<p class="description">Use your OpenAI API key. Make sure you have <a href="https://platform.openai.com/account/billing/overview" target="_blank">billing enabled</a> ';
+    echo 'and sufficient credits for image generation.</p></td></tr>';
     echo '<tr><th>DALL·E Model</th><td><input type="text" name="ai_blogpost_dalle_model" value="'.esc_attr(get_option('ai_blogpost_dalle_model')).'"><p>Bijv: dall-e-3 (indien ondersteund)</p></td></tr>';
     echo '<tr><th>DALL·E Afbeeldingsformaat</th><td><select name="ai_blogpost_dalle_size">';
     $selected_size = get_option('ai_blogpost_dalle_size','1024x1024');
@@ -89,6 +99,63 @@ function ai_blogpost_admin_page() {
         $next_post_time_formatted = get_date_from_gmt(date('Y-m-d H:i:s',$next_post_time), 'Y-m-d H:i:s');
         echo '<p>Next Post Time: '.$next_post_time_formatted.'</p>';
     }
+
+    // Add Status Panel
+    echo '<div class="ai-status-panel" style="margin-top: 30px; padding: 20px; background: #fff; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">';
+    echo '<h2>OpenAI Communication Status</h2>';
+    
+    // Get latest logs
+    $logs = get_option('ai_blogpost_api_logs', array());
+    $logs = array_slice($logs, -5); // Show last 5 entries
+    
+    if (empty($logs)) {
+        echo '<p>No API communications logged yet.</p>';
+    } else {
+        echo '<table class="widefat" style="margin-top: 10px;">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>';
+        
+        foreach ($logs as $log) {
+            $status_color = $log['success'] ? '#46b450' : '#dc3232';
+            echo sprintf(
+                '<tr>
+                    <td>%s</td>
+                    <td>%s</td>
+                    <td><span style="color: %s">%s</span></td>
+                    <td><button type="button" class="button" onclick="toggleDetails(\'%s\')">Show Details</button>
+                        <div id="%s" style="display:none; margin-top: 10px; white-space: pre-wrap;">%s</div>
+                    </td>
+                </tr>',
+                esc_html(date('Y-m-d H:i:s', $log['time'])),
+                esc_html($log['type']),
+                $status_color,
+                $log['success'] ? 'Success' : 'Failed',
+                esc_attr('log_' . $log['time']),
+                esc_attr('log_' . $log['time']),
+                esc_html(print_r($log['data'], true))
+            );
+        }
+        
+        echo '</tbody></table>';
+    }
+    
+    // Add JavaScript for toggling details
+    echo '<script>
+    function toggleDetails(id) {
+        var element = document.getElementById(id);
+        element.style.display = element.style.display === "none" ? "block" : "none";
+    }
+    </script>';
+    
+    echo '<p><button type="button" class="button" onclick="window.location.reload();">Refresh Status</button></p>';
+    echo '</div>';
 }
 
 // Test post
@@ -151,199 +218,262 @@ function fetch_ai_response($correspondences) {
 }
 
 function prepare_ai_prompt($correspondences) {
-    $prompt = get_cached_option('ai_blogpost_prompt', '');
-    $currentDate = date_i18n(get_option('date_format'));
-    
+    $base_prompt = "Schrijf een Nederlandse blog over [categorie]. Gebruik secties:
+||Title||:
+||Content||:
+||Category||:[categorie]
+Schrijf de inhoud van de content sectie binnen de <article> </article> tags en gebruik <p> en <h1> <h2>.";
+
+    $prompt = $base_prompt;
     foreach ($correspondences as $key => $value) {
         $prompt = str_replace("[$key]", $value, $prompt);
     }
     
-    return str_replace('[datum]', $currentDate, $prompt);
+    return str_replace('[datum]', date_i18n(get_option('date_format')), $prompt);
+}
+
+function prepare_dalle_prompt($correspondences) {
+    $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
+        'Create a mystical and ethereal tarot-inspired digital art featuring [categorie] symbolism, with magical elements in a dreamlike atmosphere.');
+    
+    $prompt = $template;
+    foreach ($correspondences as $key => $value) {
+        $prompt = str_replace("[$key]", $value, $prompt);
+    }
+    
+    return $prompt;
 }
 
 function send_ai_request($prompt) {
-    $args = array(
-        'body' => json_encode(array(
-            'model' => get_cached_option('ai_blogpost_model', 'gpt-4'),
-            'messages' => array(
-                array("role" => "system", "content" => get_cached_option('ai_blogpost_role')),
-                array("role" => "user", "content" => $prompt)
+    try {
+        $args = array(
+            'body' => json_encode(array(
+                'model' => get_cached_option('ai_blogpost_model', 'gpt-4'),
+                'messages' => array(
+                    array("role" => "system", "content" => get_cached_option('ai_blogpost_role')),
+                    array("role" => "user", "content" => $prompt)
+                ),
+                'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
+                'max_tokens' => (int)get_cached_option('ai_blogpost_max_tokens', 1024)
+            )),
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . get_cached_option('ai_blogpost_api_key')
             ),
-            'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
-            'max_tokens' => (int)get_cached_option('ai_blogpost_max_tokens', 1024)
-        )),
-        'headers' => array(
-            'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' . get_cached_option('ai_blogpost_api_key')
-        ),
-        'timeout' => 60
-    );
+            'timeout' => 60
+        );
 
-    $response = wp_remote_post('https://api.openai.com/v1/chat/completions', $args);
-    
-    if (is_wp_error($response)) {
-        throw new Exception($response->get_error_message());
+        // Log the request (excluding API key)
+        $log_args = $args;
+        $log_args['headers']['Authorization'] = 'Bearer [HIDDEN]';
+        ai_blogpost_log_api_call('Text Generation', false, array(
+            'request' => $log_args,
+            'prompt' => $prompt
+        ));
+
+        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', $args);
+        
+        if (is_wp_error($response)) {
+            throw new Exception($response->get_error_message());
+        }
+        
+        $result = json_decode(wp_remote_retrieve_body($response), true);
+        
+        // Log the successful response
+        ai_blogpost_log_api_call('Text Generation', true, array(
+            'response' => $result,
+            'prompt' => $prompt
+        ));
+        
+        return $result;
+    } catch (Exception $e) {
+        // Log the error
+        ai_blogpost_log_api_call('Text Generation', false, array(
+            'error' => $e->getMessage(),
+            'prompt' => $prompt
+        ));
+        throw $e;
     }
-    
-    return json_decode(wp_remote_retrieve_body($response), true);
 }
 
 // ------------------ FETCH DALL·E IMAGE ------------------
 function fetch_dalle_image_from_text($dalle_prompt) {
-    $dalle_enabled = get_cached_option('ai_blogpost_dalle_enabled',0);
-    if(!$dalle_enabled) {return null;}
+    $dalle_enabled = get_cached_option('ai_blogpost_dalle_enabled', 0);
+    if (!$dalle_enabled) {
+        return null;
+    }
 
-    $api_key = get_cached_option('ai_blogpost_dalle_api_key','');
-    $size = get_cached_option('ai_blogpost_dalle_size','1024x1024');
-    $dalle_style = get_cached_option('ai_blogpost_dalle_style','');
-    $dalle_quality = get_cached_option('ai_blogpost_dalle_quality','');
-    $dalle_model = get_cached_option('ai_blogpost_dalle_model','');
+    if (empty($dalle_prompt)) {
+        error_log('No DALL·E prompt provided');
+        return null;
+    }
 
+    $api_key = get_cached_option('ai_blogpost_dalle_api_key', '');
+    if (empty($api_key)) {
+        error_log('DALL·E API key is missing');
+        return null;
+    }
+
+    $size = get_cached_option('ai_blogpost_dalle_size', '1024x1024');
+    $dalle_style = get_cached_option('ai_blogpost_dalle_style', '');
+    $dalle_quality = get_cached_option('ai_blogpost_dalle_quality', '');
+    $dalle_model = get_cached_option('ai_blogpost_dalle_model', 'dall-e-3');
+
+    // Prepare the payload
     $payload = array(
-        'prompt'=>$dalle_prompt,
-        'n'=>1,
-        'size'=>$size,
-        'response_format'=>'b64_json'
+        'model' => $dalle_model,
+        'prompt' => $dalle_prompt,
+        'n' => 1,
+        'size' => $size,
+        'response_format' => 'b64_json'
     );
 
-    if(!empty($dalle_model)) {
-        $payload['model']=$dalle_model;
+    if (!empty($dalle_style)) {
+        $payload['style'] = $dalle_style;
+    }
+    if (!empty($dalle_quality)) {
+        $payload['quality'] = $dalle_quality;
     }
 
-    if(!empty($dalle_style)) {$payload['style']=$dalle_style;}
-    if(!empty($dalle_quality)) {$payload['quality']=$dalle_quality;}
+    // Debug log
+    error_log('DALL·E Request Payload: ' . print_r($payload, true));
 
-    $response = wp_remote_post('https://api.openai.com/v1/images/generations',array(
-        'body'=>json_encode($payload),
-        'headers'=>array(
-            'Content-Type'=>'application/json',
-            'Authorization'=>'Bearer '.$api_key
-        ),
-        'timeout'=>60
-    ));
+    try {
+        // Log DALL·E request
+        ai_blogpost_log_api_call('Image Generation', false, array(
+            'prompt' => $dalle_prompt,
+            'settings' => $payload
+        ));
+        
+        $response = wp_remote_post('https://api.openai.com/v1/images/generations', array(
+            'body' => json_encode($payload),
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . $api_key
+            ),
+            'timeout' => 60
+        ));
 
-    if(is_wp_error($response)){
-        error_log('Failed to get DALL·E image: '.$response->get_error_message());
+        if(is_wp_error($response)) {
+            throw new Exception($response->get_error_message());
+        }
+
+        // Log raw response for debugging
+        error_log('DALL·E Raw Response: ' . wp_remote_retrieve_body($response));
+        
+        $response_body = wp_remote_retrieve_body($response);
+        $decoded_response = json_decode($response_body,true);
+        if(empty($decoded_response['data'][0]['b64_json'])){
+            error_log('DALL·E returned no base64 image data. Response: '.$response_body);
+            return null;
+        }
+
+        $image_base64 = $decoded_response['data'][0]['b64_json'];
+        $image_data = base64_decode($image_base64);
+        if($image_data===false){
+            error_log('Failed to decode base64 image data.');
+            return null;
+        }
+
+        $filename='dalle_image_'.time().'.png';
+        $upload = wp_upload_bits($filename,null,$image_data);
+        if($upload['error']){
+            error_log('Image upload failed: '.$upload['error']);
+            return null;
+        }
+
+        require_once(ABSPATH.'wp-admin/includes/image.php');
+        require_once(ABSPATH.'wp-admin/includes/file.php');
+        require_once(ABSPATH.'wp-admin/includes/media.php');
+
+        $wp_filetype = wp_check_filetype($upload['file'],null);
+        $attachment = array(
+            'post_mime_type'=>$wp_filetype['type'],
+            'post_title'=>sanitize_file_name($filename),
+            'post_content'=>'',
+            'post_status'=>'inherit'
+        );
+
+        $attach_id = wp_insert_attachment($attachment,$upload['file']);
+        if(is_wp_error($attach_id)){
+            error_log('Failed to insert attachment: '.$attach_id->get_error_message());
+            return null;
+        }
+
+        $attach_data = wp_generate_attachment_metadata($attach_id,$upload['file']);
+        wp_update_attachment_metadata($attach_id,$attach_data);
+
+        // Log success
+        ai_blogpost_log_api_call('Image Generation', true, array(
+            'prompt' => $dalle_prompt,
+            'image_id' => $attach_id
+        ));
+        
+        return $attach_id;
+    } catch (Exception $e) {
+        // Log error
+        ai_blogpost_log_api_call('Image Generation', false, array(
+            'error' => $e->getMessage(),
+            'prompt' => $dalle_prompt
+        ));
         return null;
     }
-
-    $response_body = wp_remote_retrieve_body($response);
-    $decoded_response = json_decode($response_body,true);
-    if(empty($decoded_response['data'][0]['b64_json'])){
-        error_log('DALL·E returned no base64 image data. Response: '.$response_body);
-        return null;
-    }
-
-    $image_base64 = $decoded_response['data'][0]['b64_json'];
-    $image_data = base64_decode($image_base64);
-    if($image_data===false){
-        error_log('Failed to decode base64 image data.');
-        return null;
-    }
-
-    $filename='dalle_image_'.time().'.png';
-    $upload = wp_upload_bits($filename,null,$image_data);
-    if($upload['error']){
-        error_log('Image upload failed: '.$upload['error']);
-        return null;
-    }
-
-    require_once(ABSPATH.'wp-admin/includes/image.php');
-    require_once(ABSPATH.'wp-admin/includes/file.php');
-    require_once(ABSPATH.'wp-admin/includes/media.php');
-
-    $wp_filetype = wp_check_filetype($upload['file'],null);
-    $attachment = array(
-        'post_mime_type'=>$wp_filetype['type'],
-        'post_title'=>sanitize_file_name($filename),
-        'post_content'=>'',
-        'post_status'=>'inherit'
-    );
-
-    $attach_id = wp_insert_attachment($attachment,$upload['file']);
-    if(is_wp_error($attach_id)){
-        error_log('Failed to insert attachment: '.$attach_id->get_error_message());
-        return null;
-    }
-
-    $attach_data = wp_generate_attachment_metadata($attach_id,$upload['file']);
-    wp_update_attachment_metadata($attach_id,$attach_data);
-
-    return $attach_id;
 }
 
 // ------------------ CREATE POST ------------------
 function create_ai_blogpost() {
-    $correspondences = ai_blogpost_get_correspondences();
-    $ai_result = fetch_ai_response($correspondences);
-    if(!$ai_result) {
-        error_log('No AI result received');
-        return;
-    }
-
-    $ai_content = $ai_result['content'];
-    $category_name = $ai_result['category'];
-
-    // Improved content parsing with error logging
-    $parsed_content = parse_ai_content($ai_content);
-    $title = $parsed_content['title'];
-    $content = $parsed_content['content'];
-    $dalle_prompt_extracted = $parsed_content['dalle_prompt'];
-
-    // Validate we have minimum required content
-    if (empty($content)) {
-        error_log('No content parsed from AI response');
-        return;
-    }
-
-    // Category handling
-    $category = get_term_by('name', $category_name, 'category');
-    if (!$category) {
-        $category = wp_insert_term($category_name, 'category');
-    }
-    
-    if (is_wp_error($category)) {
-        error_log('Category error: ' . $category->get_error_message());
-        $category_id = 1; // fallback to uncategorized
-    } else {
-        $category_id = is_array($category) ? $category['term_id'] : $category->term_id;
-    }
-
-    // Create post with error handling
-    $post_data = array(
-        'post_title' => wp_strip_all_tags($title),
-        'post_content' => wpautop($content), // Add proper paragraph formatting
-        'post_status' => 'publish',
-        'post_author' => 1,
-        'post_category' => array($category_id)
-    );
-
-    $post_id = wp_insert_post($post_data, true); // true to get WP_Error on failure
-
-    if (is_wp_error($post_id)) {
-        error_log('Failed to create post: ' . $post_id->get_error_message());
-        return;
-    }
-
-    // DALL-E image handling
-    if (!empty($dalle_prompt_extracted)) {
-        $attach_id = fetch_dalle_image_from_text($dalle_prompt_extracted);
-        if ($attach_id) {
-            set_post_thumbnail($post_id, $attach_id);
-            error_log('Featured image set for post ID: ' . $post_id);
-        } else {
-            error_log('Failed to generate or attach DALL-E image for post ID: ' . $post_id);
+    try {
+        $correspondences = ai_blogpost_get_correspondences();
+        
+        // First generate text content
+        $ai_result = fetch_ai_response($correspondences);
+        if (!$ai_result) {
+            throw new Exception('No AI result received');
         }
-    }
 
-    error_log('Post created successfully. ID: ' . $post_id . ', Title: ' . $title);
+        $parsed_content = parse_ai_content($ai_result['content']);
+        
+        // Create post first
+        $post_data = array(
+            'post_title' => wp_strip_all_tags($parsed_content['title']),
+            'post_content' => wpautop($parsed_content['content']),
+            'post_status' => 'publish',
+            'post_author' => 1,
+            'post_category' => array(get_cat_ID($parsed_content['category']) ?: 1)
+        );
+
+        $post_id = wp_insert_post($post_data, true);
+        
+        if (is_wp_error($post_id)) {
+            throw new Exception('Failed to create post: ' . $post_id->get_error_message());
+        }
+
+        // Then handle DALL-E image separately if enabled
+        if (get_cached_option('ai_blogpost_dalle_enabled', 0)) {
+            $dalle_prompt = prepare_dalle_prompt($correspondences);
+            error_log('DALL-E Prompt: ' . $dalle_prompt);
+            
+            $attach_id = fetch_dalle_image_from_text($dalle_prompt);
+            if ($attach_id) {
+                set_post_thumbnail($post_id, $attach_id);
+                error_log('Featured image set for post ID: ' . $post_id);
+            } else {
+                error_log('Failed to generate or attach DALL-E image');
+            }
+        }
+
+        return $post_id;
+    } catch (Exception $e) {
+        error_log('Error in create_ai_blogpost: ' . $e->getMessage());
+        return null;
+    }
 }
 
 function parse_ai_content($ai_content) {
     $patterns = array(
         'title' => '/\|\|Title\|\|:\s*(.*?)(?=\|\|Content\|\|:)/s',
         'content' => '/\|\|Content\|\|:\s*(.*?)(?=\|\|Category\|\|:)/s',
-        'category' => '/\|\|Category\|\|:\s*(.*?)(?=\|\|DALL_E_Prompt\|\|:)/s',
+        'category' => '/\|\|Category\|\|:\s*(.*?)(?=\|\|DALL_E_Prompt\|\|:|$)/s',
         'dalle_prompt' => '/\|\|DALL_E_Prompt\|\|:\s*(.*?)$/s'
     );
 
@@ -356,6 +486,9 @@ function parse_ai_content($ai_content) {
             $parsed[$key] = $key === 'title' ? 'AI-Generated Post' : '';
         }
     }
+
+    // Debug log
+    error_log('Parsed Content: ' . print_r($parsed, true));
 
     return $parsed;
 }
@@ -407,4 +540,24 @@ function get_cached_option($option_name, $default = '') {
     }
     
     return $cache[$option_name];
+}
+
+// Add logging function
+function ai_blogpost_log_api_call($type, $success, $data) {
+    $logs = get_option('ai_blogpost_api_logs', array());
+    
+    // Add new log entry
+    $logs[] = array(
+        'time' => time(),
+        'type' => $type,
+        'success' => $success,
+        'data' => $data
+    );
+    
+    // Keep only last 20 entries
+    if (count($logs) > 20) {
+        $logs = array_slice($logs, -20);
+    }
+    
+    update_option('ai_blogpost_api_logs', $logs);
 }
