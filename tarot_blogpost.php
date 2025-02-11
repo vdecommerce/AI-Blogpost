@@ -48,7 +48,7 @@ function ai_blogpost_admin_page() {
     echo '<tr><th>Role</th><td><textarea name="ai_blogpost_role" rows="4" cols="50">'.esc_textarea(get_option('ai_blogpost_role')).'</textarea></td></tr>';
     echo '<tr><th>Categories</th><td><textarea name="ai_blogpost_custom_categories" rows="4" cols="50">'.esc_textarea(get_option('ai_blogpost_custom_categories')).'</textarea><p>Één per regel</p></td></tr>';
     echo '<tr><th>Temperature</th><td><input type="number" name="ai_blogpost_temperature" min="0" max="1" step="0.1" value="'.esc_attr(get_option('ai_blogpost_temperature')).'"></td></tr>';
-    echo '<tr><th>Max Tokens</th><td><input type="number" name="ai_blogpost_max_tokens" min="1" max="4096" value="'.esc_attr(get_option('ai_blogpost_max_tokens')).'"></td></tr>';
+    echo '<tr><th>Max Tokens</th><td><input type="number" name="ai_blogpost_max_tokens" min="1" max="16000" value="'.esc_attr(get_option('ai_blogpost_max_tokens')).'"></td></tr>';
 
     // DALL·E settings
     echo '<tr><th colspan="2"><h2>DALL·E Instellingen (uitgelichte afbeelding)</h2></th></tr>';
@@ -102,114 +102,102 @@ add_action('admin_notices','create_test_ai_blogpost');
 
 // ------------------ CORRESPONDENTIES LOGICA ------------------
 function ai_blogpost_get_correspondences() {
-    $data = array(
-        'planeet' => array('Zon', 'Maan', 'Mars', 'Mercurius', 'Jupiter', 'Venus', 'Saturnus'),
-    'regenboogkleur' => array('Rood', 'Oranje', 'Geel', 'Groen', 'Blauw', 'Indigo', 'Violet'),
-    'dag'            => array('Zondag', 'Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag'),
-    'hemellichaam'   => array('Zon', 'Maan', 'Mars', 'Mercurius', 'Jupiter', 'Venus', 'Saturnus'),
-    'hermetisch_principe' => array('Geest', 'Overeenkomst', 'Trilling', 'Polariteit', 'Ritme', 'Oorzaak en Gevolg', 'Geslacht'),
-    'mineraal'       => array('Goud', 'Zilver', 'IJzer', 'Kwik', 'Tin', 'Koper', 'Lood'),
-    'geur'           => array('Wierook', 'Sandelhout', 'Muskus', 'Lavendel', 'Cederhout', 'Rozengeur', 'Patchouli'),
-    'plant_kruid'    => array('Zonnebloem', 'Maanbloem', 'Brandnetel', 'Munt', 'Eik', 'Roos', 'Cipres'),
-    'pantheon_grieks' => array('Helios', 'Selene', 'Ares', 'Hermes', 'Zeus', 'Aphrodite', 'Cronus')
-    );
-
-    $data = apply_filters('ai_blogpost_correspondences_data', $data);
-
-    $correspondences = array();
-    foreach ($data as $key => $arr) {
-        $correspondences[$key] = $arr[array_rand($arr)];
+    static $data = null;
+    
+    if ($data === null) {
+        $data = array(
+            'planeet' => array('Zon', 'Maan', 'Mars', 'Mercurius', 'Jupiter', 'Venus', 'Saturnus'),
+            'regenboogkleur' => array('Rood', 'Oranje', 'Geel', 'Groen', 'Blauw', 'Indigo', 'Violet'),
+            'dag' => array('Zondag', 'Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag'),
+            'hemellichaam'   => array('Zon', 'Maan', 'Mars', 'Mercurius', 'Jupiter', 'Venus', 'Saturnus'),
+            'hermetisch_principe' => array('Geest', 'Overeenkomst', 'Trilling', 'Polariteit', 'Ritme', 'Oorzaak en Gevolg', 'Geslacht'),
+            'mineraal'       => array('Goud', 'Zilver', 'IJzer', 'Kwik', 'Tin', 'Koper', 'Lood'),
+            'geur'           => array('Wierook', 'Sandelhout', 'Muskus', 'Lavendel', 'Cederhout', 'Rozengeur', 'Patchouli'),
+            'plant_kruid'    => array('Zonnebloem', 'Maanbloem', 'Brandnetel', 'Munt', 'Eik', 'Roos', 'Cipres'),
+            'pantheon_grieks' => array('Helios', 'Selene', 'Ares', 'Hermes', 'Zeus', 'Aphrodite', 'Cronus')
+        );
+        $data = apply_filters('ai_blogpost_correspondences_data', $data);
     }
 
-    return $correspondences;
+    return array_map(function($arr) {
+        return $arr[array_rand($arr)];
+    }, $data);
 }
 
 // ------------------ FETCH AI TEXT ------------------
 function fetch_ai_response($correspondences) {
-    $api_key = get_option('ai_blogpost_api_key','');
-    $model = get_option('ai_blogpost_model','gpt-4');
-    $role = get_option('ai_blogpost_role','');
-    $temperature = (float)get_option('ai_blogpost_temperature',0.7);
-    $max_tokens = (int)get_option('ai_blogpost_max_tokens',1024);
+    try {
+        $api_key = get_cached_option('ai_blogpost_api_key');
+        if (empty($api_key)) {
+            throw new Exception('API key is missing');
+        }
 
-    // Seizoen bepalen
-    $month = date("n");
-    if($month>=3 && $month<=5){$season='lente';}
-    elseif($month>=6 && $month<=8){$season='zomer';}
-    elseif($month>=9 && $month<=11){$season='herfst';}
-    else{$season='winter';}
+        $prompt = prepare_ai_prompt($correspondences);
+        $response = send_ai_request($prompt);
+        
+        if (!isset($response['choices'][0]['message']['content'])) {
+            throw new Exception('Invalid API response format');
+        }
 
-    // Categorie
-    $custom_categories = get_option('ai_blogpost_custom_categories','');
-    $default_categories=array('Uncategorized');
-    $categories=!empty($custom_categories)?array_map('trim',explode("\n",$custom_categories)):$default_categories;
-    $categories = array_filter($categories);
-    if(empty($categories)){$categories=$default_categories;}
-    $randomCategory = $categories[array_rand($categories)];
-
-    $wp_date_format = get_option('date_format');
-    $wp_current_time = current_time('mysql');
-    $wp_current_date = new DateTime($wp_current_time);
-    $currentDate = date_i18n($wp_date_format,strtotime($wp_current_date->format('Y-m-d H:i:s')));
-
-    // Originele prompt ophalen
-    $original_prompt = get_option('ai_blogpost_prompt','');
-
-    // Correspondenties vervangen
-    foreach($correspondences as $key => $value) {
-        $original_prompt = str_replace('['.$key.']', $value, $original_prompt);
+        return array(
+            'content' => $response['choices'][0]['message']['content'],
+            'category' => get_cached_option('ai_blogpost_custom_categories', 'Uncategorized'),
+            'correspondences' => $correspondences
+        );
+    } catch (Exception $e) {
+        error_log('AI Response Error: ' . $e->getMessage());
+        return null;
     }
+}
 
-    // Datum vervangen
-    $original_prompt = str_replace('[datum]', $currentDate, $original_prompt);
+function prepare_ai_prompt($correspondences) {
+    $prompt = get_cached_option('ai_blogpost_prompt', '');
+    $currentDate = date_i18n(get_option('date_format'));
+    
+    foreach ($correspondences as $key => $value) {
+        $prompt = str_replace("[$key]", $value, $prompt);
+    }
+    
+    return str_replace('[datum]', $currentDate, $prompt);
+}
 
-    // Categorie vervangen
-    $prompt = str_replace("[categorie]", $randomCategory, $original_prompt);
-
-    $messages = array(
-        array("role"=>"system","content"=>$role),
-        array("role"=>"user","content"=>$prompt)
+function send_ai_request($prompt) {
+    $args = array(
+        'body' => json_encode(array(
+            'model' => get_cached_option('ai_blogpost_model', 'gpt-4'),
+            'messages' => array(
+                array("role" => "system", "content" => get_cached_option('ai_blogpost_role')),
+                array("role" => "user", "content" => $prompt)
+            ),
+            'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
+            'max_tokens' => (int)get_cached_option('ai_blogpost_max_tokens', 1024)
+        )),
+        'headers' => array(
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . get_cached_option('ai_blogpost_api_key')
+        ),
+        'timeout' => 60
     );
 
-    $response = wp_remote_post('https://api.openai.com/v1/chat/completions',array(
-        'body'=>json_encode(array(
-            'model'=>$model,
-            'messages'=>$messages,
-            'temperature'=>$temperature,
-            'max_tokens'=>$max_tokens
-        )),
-        'headers'=>array(
-            'Content-Type'=>'application/json',
-            'Authorization'=>'Bearer '.$api_key
-        ),
-        'timeout'=>60
-    ));
-
-    if(is_wp_error($response)){
-        error_log('Failed to get AI text response: '.$response->get_error_message());
-        return null;
-    } else {
-        $response_body = wp_remote_retrieve_body($response);
-        $decoded_response = json_decode($response_body,true);
-        $ai_content = $decoded_response['choices'][0]['message']['content']??null;
-        if($ai_content===null){
-            error_log('Failed to extract AI content from text API response.');
-            return null;
-        }
-        return array('content'=>$ai_content,'category'=>$randomCategory,'correspondences'=>$correspondences);
+    $response = wp_remote_post('https://api.openai.com/v1/chat/completions', $args);
+    
+    if (is_wp_error($response)) {
+        throw new Exception($response->get_error_message());
     }
+    
+    return json_decode(wp_remote_retrieve_body($response), true);
 }
 
 // ------------------ FETCH DALL·E IMAGE ------------------
 function fetch_dalle_image_from_text($dalle_prompt) {
-    $dalle_enabled = get_option('ai_blogpost_dalle_enabled',0);
+    $dalle_enabled = get_cached_option('ai_blogpost_dalle_enabled',0);
     if(!$dalle_enabled) {return null;}
 
-    $api_key = get_option('ai_blogpost_dalle_api_key','');
-    $size = get_option('ai_blogpost_dalle_size','1024x1024');
-    $dalle_style = get_option('ai_blogpost_dalle_style','');
-    $dalle_quality = get_option('ai_blogpost_dalle_quality','');
-    $dalle_model = get_option('ai_blogpost_dalle_model','');
+    $api_key = get_cached_option('ai_blogpost_dalle_api_key','');
+    $size = get_cached_option('ai_blogpost_dalle_size','1024x1024');
+    $dalle_style = get_cached_option('ai_blogpost_dalle_style','');
+    $dalle_quality = get_cached_option('ai_blogpost_dalle_quality','');
+    $dalle_model = get_cached_option('ai_blogpost_dalle_model','');
 
     $payload = array(
         'prompt'=>$dalle_prompt,
@@ -288,62 +276,94 @@ function fetch_dalle_image_from_text($dalle_prompt) {
 function create_ai_blogpost() {
     $correspondences = ai_blogpost_get_correspondences();
     $ai_result = fetch_ai_response($correspondences);
-    if(!$ai_result) {return;}
+    if(!$ai_result) {
+        error_log('No AI result received');
+        return;
+    }
 
     $ai_content = $ai_result['content'];
     $category_name = $ai_result['category'];
 
-    // Parse AI Content
-    preg_match('/\|\|Title\|\|:(.*?)\|\|Content\|\|:/s',$ai_content,$title_matches);
-    preg_match('/\|\|Content\|\|:(.*?)\|\|Category\|\|:/s',$ai_content,$content_matches);
-    preg_match('/\|\|Category\|\|:(.*?)\|\|DALL_E_Prompt\|\|:/s',$ai_content,$category_matches);
-    preg_match('/\|\|DALL_E_Prompt\|\|:(.*?)(\|\||$)/s',$ai_content,$dalle_prompt_matches);
+    // Improved content parsing with error logging
+    $parsed_content = parse_ai_content($ai_content);
+    $title = $parsed_content['title'];
+    $content = $parsed_content['content'];
+    $dalle_prompt_extracted = $parsed_content['dalle_prompt'];
 
-    $title = isset($title_matches[1])?trim($title_matches[1]):'AI-Generated Post';
-    $content = isset($content_matches[1])?trim($content_matches[1]):'';
-    $category_name = isset($category_matches[1])?trim($category_matches[1]):$category_name;
-    $dalle_prompt_extracted = isset($dalle_prompt_matches[1]) ? trim($dalle_prompt_matches[1]) : '';
-
-    // Category
-    $category = get_term_by('name',$category_name,'category');
-    if(!$category) {$category=wp_insert_term($category_name,'category');}
-    if(is_wp_error($category)){
-        error_log('Failed to get/create category: '.$category->get_error_message());
-        $category_id=1; //fallback
-    } else {
-        $category_id = is_array($category)?$category['term_id']:$category->term_id;
-    }
-
-    // Create post
-    $post_id = wp_insert_post(array(
-        'post_title'=>wp_strip_all_tags($title),
-        'post_content'=>$content,
-        'post_status'=>'publish',
-        'post_author'=>1,
-        'post_category'=>array($category_id)
-    ));
-
-    if(is_wp_error($post_id)){
-        error_log('Failed to insert post: '.$post_id->get_error_message());
+    // Validate we have minimum required content
+    if (empty($content)) {
+        error_log('No content parsed from AI response');
         return;
     }
 
-    // DALL·E image vanuit de text
-    if(!empty($dalle_prompt_extracted)){
+    // Category handling
+    $category = get_term_by('name', $category_name, 'category');
+    if (!$category) {
+        $category = wp_insert_term($category_name, 'category');
+    }
+    
+    if (is_wp_error($category)) {
+        error_log('Category error: ' . $category->get_error_message());
+        $category_id = 1; // fallback to uncategorized
+    } else {
+        $category_id = is_array($category) ? $category['term_id'] : $category->term_id;
+    }
+
+    // Create post with error handling
+    $post_data = array(
+        'post_title' => wp_strip_all_tags($title),
+        'post_content' => wpautop($content), // Add proper paragraph formatting
+        'post_status' => 'publish',
+        'post_author' => 1,
+        'post_category' => array($category_id)
+    );
+
+    $post_id = wp_insert_post($post_data, true); // true to get WP_Error on failure
+
+    if (is_wp_error($post_id)) {
+        error_log('Failed to create post: ' . $post_id->get_error_message());
+        return;
+    }
+
+    // DALL-E image handling
+    if (!empty($dalle_prompt_extracted)) {
         $attach_id = fetch_dalle_image_from_text($dalle_prompt_extracted);
-        if($attach_id){
-            set_post_thumbnail($post_id,$attach_id);
-            error_log('Featured image set for post ID: '.$post_id);
+        if ($attach_id) {
+            set_post_thumbnail($post_id, $attach_id);
+            error_log('Featured image set for post ID: ' . $post_id);
         } else {
-            error_log('No DALL·E image attached for post ID: '.$post_id);
+            error_log('Failed to generate or attach DALL-E image for post ID: ' . $post_id);
         }
     }
+
+    error_log('Post created successfully. ID: ' . $post_id . ', Title: ' . $title);
+}
+
+function parse_ai_content($ai_content) {
+    $patterns = array(
+        'title' => '/\|\|Title\|\|:\s*(.*?)(?=\|\|Content\|\|:)/s',
+        'content' => '/\|\|Content\|\|:\s*(.*?)(?=\|\|Category\|\|:)/s',
+        'category' => '/\|\|Category\|\|:\s*(.*?)(?=\|\|DALL_E_Prompt\|\|:)/s',
+        'dalle_prompt' => '/\|\|DALL_E_Prompt\|\|:\s*(.*?)$/s'
+    );
+
+    $parsed = array();
+    foreach ($patterns as $key => $pattern) {
+        if (preg_match($pattern, $ai_content, $matches)) {
+            $parsed[$key] = trim($matches[1]);
+        } else {
+            error_log("Failed to parse {$key} from AI response");
+            $parsed[$key] = $key === 'title' ? 'AI-Generated Post' : '';
+        }
+    }
+
+    return $parsed;
 }
 
 // ------------------ CRON SCHEDULING ------------------
 function ai_blogpost_schedule_cron() {
-    $frequency = get_option('ai_blogpost_post_frequency','daily');
-    $is_scheduled = get_option('ai_blogpost_is_scheduled',false);
+    $frequency = get_cached_option('ai_blogpost_post_frequency','daily');
+    $is_scheduled = get_cached_option('ai_blogpost_is_scheduled',false);
 
     if($frequency=='weekly'){
         add_filter('cron_schedules','ai_blogpost_weekly_schedule');
@@ -378,3 +398,13 @@ function ai_blogpost_deactivation(){
     update_option('ai_blogpost_is_scheduled',false);
 }
 register_deactivation_hook(__FILE__,'ai_blogpost_deactivation');
+
+function get_cached_option($option_name, $default = '') {
+    static $cache = array();
+    
+    if (!isset($cache[$option_name])) {
+        $cache[$option_name] = get_option($option_name, $default);
+    }
+    
+    return $cache[$option_name];
+}
