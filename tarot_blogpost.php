@@ -100,79 +100,114 @@ function ai_blogpost_admin_page() {
         echo '<p>Next Post Time: '.$next_post_time_formatted.'</p>';
     }
 
-    // Add Status Panel
+    // Add Status Panel with improved styling
     echo '<div class="ai-status-panel" style="margin-top: 30px; padding: 20px; background: #fff; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">';
-    echo '<h2>OpenAI Communication Status</h2>';
     
-    // Get latest logs
-    $logs = get_option('ai_blogpost_api_logs', array());
-    $logs = array_slice($logs, -5); // Show last 5 entries
+    // Add header with title and buttons
+    echo '<div class="status-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #ccd0d4;">';
+    echo '<h2 style="margin: 0;">AI Generation Status</h2>';
     
-    if (empty($logs)) {
-        echo '<p>No API communications logged yet.</p>';
-    } else {
-        echo '<table class="widefat" style="margin-top: 10px;">
-            <thead>
-                <tr>
-                    <th>Time</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Details</th>
-                </tr>
-            </thead>
-            <tbody>';
-        
-        foreach ($logs as $log) {
-            $status_color = $log['success'] ? '#46b450' : '#dc3232';
-            echo sprintf(
-                '<tr>
-                    <td>%s</td>
-                    <td>%s</td>
-                    <td><span style="color: %s">%s</span></td>
-                    <td><button type="button" class="button" onclick="toggleDetails(\'%s\')">Show Details</button>
-                        <div id="%s" style="display:none; margin-top: 10px; white-space: pre-wrap;">%s</div>
-                    </td>
-                </tr>',
-                esc_html(date('Y-m-d H:i:s', $log['time'])),
-                esc_html($log['type']),
-                $status_color,
-                $log['success'] ? 'Success' : 'Failed',
-                esc_attr('log_' . $log['time']),
-                esc_attr('log_' . $log['time']),
-                esc_html(print_r($log['data'], true))
-            );
-        }
-        
-        echo '</tbody></table>';
+    // Action buttons group
+    echo '<div class="status-actions" style="display: flex; gap: 10px;">';
+    // Clear Logs form
+    echo '<form method="post" style="display: inline;">';
+    wp_nonce_field('clear_ai_logs_nonce');
+    echo '<input type="submit" name="clear_ai_logs" class="button" value="Clear Logs">';
+    echo '</form>';
+    // Refresh button
+    echo '<button type="button" class="button" onclick="window.location.reload();">Refresh Status</button>';
+    echo '</div>';
+    echo '</div>';
+    
+    // Success message for cleared logs
+    if (isset($_GET['logs_cleared'])) {
+        echo '<div class="notice notice-success is-dismissible" style="margin: 0 0 20px 0;"><p>Status logs cleared successfully!</p></div>';
     }
     
-    // Add JavaScript for toggling details
+    // Status sections with grid layout
+    echo '<div class="status-sections" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">';
+    
+    // Text Generation Status
+    echo '<div class="status-section">';
+    echo '<h3 style="margin-top: 0;">Text Generation</h3>';
+    display_api_logs('Text Generation');
+    echo '</div>';
+    
+    // Image Generation Status
+    echo '<div class="status-section">';
+    echo '<h3 style="margin-top: 0;">Image Generation</h3>';
+    display_api_logs('Image Generation');
+    echo '</div>';
+    
+    echo '</div>'; // Close status-sections
+
+    // Add improved JavaScript for toggling details
     echo '<script>
     function toggleDetails(id) {
         var element = document.getElementById(id);
-        element.style.display = element.style.display === "none" ? "block" : "none";
+        var button = document.querySelector(`button[onclick="toggleDetails(\'${id}\')"]`);
+        if (element.style.display === "none") {
+            element.style.display = "block";
+            button.textContent = "Hide Details";
+        } else {
+            element.style.display = "none";
+            button.textContent = "Show Details";
+        }
     }
     </script>';
     
-    echo '<p><button type="button" class="button" onclick="window.location.reload();">Refresh Status</button></p>';
-    echo '</div>';
+    echo '</div>'; // Close ai-status-panel
 }
 
-// Test post
-function create_test_ai_blogpost(){
-    if(isset($_POST['test_ai_blogpost'])){
-        create_ai_blogpost();
-        echo '<div class="updated notice"><p>Test Post Created Successfully!</p></div>';
+// Test post handler with static flag
+function create_test_ai_blogpost() {
+    static $already_running = false;
+    
+    if (isset($_POST['test_ai_blogpost']) && !$already_running) {
+        $already_running = true;
+        
+        try {
+            // Create post and handle both text and image generation
+            $post_id = create_ai_blogpost();
+            
+            if ($post_id) {
+                // Add success notice to transient to avoid duplicate messages
+                set_transient('ai_blogpost_test_notice', 'success', 30);
+            }
+        } catch (Exception $e) {
+            // Log error and set error notice
+            error_log('Test post creation failed: ' . $e->getMessage());
+            set_transient('ai_blogpost_test_notice', 'error', 30);
+        }
+    }
+    
+    // Display notice if set
+    $notice_type = get_transient('ai_blogpost_test_notice');
+    if ($notice_type) {
+        delete_transient('ai_blogpost_test_notice');
+        if ($notice_type === 'success') {
+            echo '<div class="updated notice is-dismissible"><p>Test Post Created Successfully!</p></div>';
+        } else {
+            echo '<div class="error notice is-dismissible"><p>Test Post Creation Failed. Check error logs.</p></div>';
+        }
     }
 }
-add_action('admin_notices','create_test_ai_blogpost');
+
+// Remove any existing hooks and add our new one
+remove_action('admin_notices', 'create_test_ai_blogpost');
+add_action('admin_notices', 'create_test_ai_blogpost', 10, 0);
 
 // ------------------ CORRESPONDENTIES LOGICA ------------------
 function ai_blogpost_get_correspondences() {
     static $data = null;
     
     if ($data === null) {
+        // Get categories from settings
+        $categories = array_filter(array_map('trim', explode("\n", 
+            get_cached_option('ai_blogpost_custom_categories', 'tarot'))));
+        
         $data = array(
+            'categorie' => $categories, // Add categories to correspondences
             'planeet' => array('Zon', 'Maan', 'Mars', 'Mercurius', 'Jupiter', 'Venus', 'Saturnus'),
             'regenboogkleur' => array('Rood', 'Oranje', 'Geel', 'Groen', 'Blauw', 'Indigo', 'Violet'),
             'dag' => array('Zondag', 'Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag'),
@@ -263,12 +298,13 @@ function send_ai_request($prompt) {
             'timeout' => 60
         );
 
-        // Log the request (excluding API key)
+        // Log the request (excluding API key) as 'pending' instead of 'failed'
         $log_args = $args;
         $log_args['headers']['Authorization'] = 'Bearer [HIDDEN]';
-        ai_blogpost_log_api_call('Text Generation', false, array(
+        ai_blogpost_log_api_call('Text Generation', true, array(
             'request' => $log_args,
-            'prompt' => $prompt
+            'prompt' => $prompt,
+            'status' => 'Request Sent'
         ));
 
         $response = wp_remote_post('https://api.openai.com/v1/chat/completions', $args);
@@ -282,15 +318,17 @@ function send_ai_request($prompt) {
         // Log the successful response
         ai_blogpost_log_api_call('Text Generation', true, array(
             'response' => $result,
-            'prompt' => $prompt
+            'prompt' => $prompt,
+            'status' => 'Response Received'
         ));
         
         return $result;
     } catch (Exception $e) {
-        // Log the error
+        // Only log as failed for actual errors
         ai_blogpost_log_api_call('Text Generation', false, array(
             'error' => $e->getMessage(),
-            'prompt' => $prompt
+            'prompt' => $prompt,
+            'status' => 'Error'
         ));
         throw $e;
     }
@@ -339,10 +377,11 @@ function fetch_dalle_image_from_text($dalle_prompt) {
     error_log('DALL·E Request Payload: ' . print_r($payload, true));
 
     try {
-        // Log DALL·E request
-        ai_blogpost_log_api_call('Image Generation', false, array(
+        // Log initial request as success with 'Request Sent' status
+        ai_blogpost_log_api_call('Image Generation', true, array(
             'prompt' => $dalle_prompt,
-            'settings' => $payload
+            'settings' => $payload,
+            'status' => 'Request Sent'
         ));
         
         $response = wp_remote_post('https://api.openai.com/v1/images/generations', array(
@@ -403,18 +442,20 @@ function fetch_dalle_image_from_text($dalle_prompt) {
         $attach_data = wp_generate_attachment_metadata($attach_id,$upload['file']);
         wp_update_attachment_metadata($attach_id,$attach_data);
 
-        // Log success
+        // Log final success with more details
         ai_blogpost_log_api_call('Image Generation', true, array(
             'prompt' => $dalle_prompt,
-            'image_id' => $attach_id
+            'image_id' => $attach_id,
+            'status' => 'Image Generated'
         ));
         
         return $attach_id;
     } catch (Exception $e) {
-        // Log error
+        // Only log as failed for actual errors
         ai_blogpost_log_api_call('Image Generation', false, array(
             'error' => $e->getMessage(),
-            'prompt' => $dalle_prompt
+            'prompt' => $dalle_prompt,
+            'status' => 'Error: ' . $e->getMessage()
         ));
         return null;
     }
@@ -425,7 +466,18 @@ function create_ai_blogpost() {
     try {
         $correspondences = ai_blogpost_get_correspondences();
         
-        // First generate text content
+        // Add default category if not set
+        if (!isset($correspondences['categorie'])) {
+            $categories = explode("\n", get_cached_option('ai_blogpost_custom_categories', 'tarot'));
+            $correspondences['categorie'] = trim($categories[array_rand($categories)]);
+        }
+        
+        // Get DALL-E prompt template ready (if enabled)
+        if (get_cached_option('ai_blogpost_dalle_enabled', 0)) {
+            $dalle_prompt = prepare_dalle_prompt($correspondences);
+        }
+        
+        // Generate text content with single API call
         $ai_result = fetch_ai_response($correspondences);
         if (!$ai_result) {
             throw new Exception('No AI result received');
@@ -433,13 +485,18 @@ function create_ai_blogpost() {
 
         $parsed_content = parse_ai_content($ai_result['content']);
         
+        // Use category from correspondences if parsed category is empty
+        $category = !empty($parsed_content['category']) ? 
+            $parsed_content['category'] : 
+            $correspondences['categorie'];
+        
         // Create post first
         $post_data = array(
             'post_title' => wp_strip_all_tags($parsed_content['title']),
             'post_content' => wpautop($parsed_content['content']),
             'post_status' => 'publish',
             'post_author' => 1,
-            'post_category' => array(get_cat_ID($parsed_content['category']) ?: 1)
+            'post_category' => array(get_cat_ID($category) ?: 1)
         );
 
         $post_id = wp_insert_post($post_data, true);
@@ -448,17 +505,14 @@ function create_ai_blogpost() {
             throw new Exception('Failed to create post: ' . $post_id->get_error_message());
         }
 
-        // Then handle DALL-E image separately if enabled
+        // Handle DALL-E image separately if enabled
         if (get_cached_option('ai_blogpost_dalle_enabled', 0)) {
-            $dalle_prompt = prepare_dalle_prompt($correspondences);
-            error_log('DALL-E Prompt: ' . $dalle_prompt);
+            error_log('Using DALL-E prompt: ' . $dalle_prompt);
             
             $attach_id = fetch_dalle_image_from_text($dalle_prompt);
             if ($attach_id) {
                 set_post_thumbnail($post_id, $attach_id);
                 error_log('Featured image set for post ID: ' . $post_id);
-            } else {
-                error_log('Failed to generate or attach DALL-E image');
             }
         }
 
@@ -561,3 +615,63 @@ function ai_blogpost_log_api_call($type, $success, $data) {
     
     update_option('ai_blogpost_api_logs', $logs);
 }
+
+// Add new helper function for displaying logs
+function display_api_logs($type) {
+    $logs = get_option('ai_blogpost_api_logs', array());
+    $filtered_logs = array_filter($logs, function($log) use ($type) {
+        return $log['type'] === $type;
+    });
+    $filtered_logs = array_slice($filtered_logs, -5);
+    
+    if (empty($filtered_logs)) {
+        echo '<div style="padding: 20px; background: #f8f9fa; border-radius: 4px; text-align: center;">';
+        echo "<p style='margin: 0;'>No {$type} communications logged yet.</p>";
+        echo '</div>';
+    } else {
+        echo '<div style="border: 1px solid #e2e4e7; border-radius: 4px; overflow: hidden;">';
+        echo '<table class="widefat" style="margin: 0; border: none;">
+            <thead>
+                <tr>
+                    <th style="width: 30%;">Time</th>
+                    <th style="width: 20%;">Status</th>
+                    <th style="width: 50%;">Details</th>
+                </tr>
+            </thead>
+            <tbody>';
+        
+        foreach ($filtered_logs as $log) {
+            $status_color = $log['success'] ? '#46b450' : '#dc3232';
+            $log_id = 'log_' . $log['type'] . '_' . $log['time'];
+            echo sprintf(
+                '<tr>
+                    <td>%s</td>
+                    <td><span style="color: %s; font-weight: 500;">%s</span></td>
+                    <td>
+                        <button type="button" class="button button-small" onclick="toggleDetails(\'%s\')">Show Details</button>
+                        <div id="%s" style="display:none; margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-family: monospace; font-size: 12px;">%s</div>
+                    </td>
+                </tr>',
+                esc_html(date('Y-m-d H:i:s', $log['time'])),
+                $status_color,
+                $log['success'] ? 'Success' : 'Failed',
+                esc_attr($log_id),
+                esc_attr($log_id),
+                esc_html(print_r($log['data'], true))
+            );
+        }
+        
+        echo '</tbody></table>';
+        echo '</div>';
+    }
+}
+
+// Add this function for clearing logs
+function ai_blogpost_clear_logs() {
+    if (isset($_POST['clear_ai_logs']) && check_admin_referer('clear_ai_logs_nonce')) {
+        delete_option('ai_blogpost_api_logs');
+        wp_redirect(add_query_arg('logs_cleared', '1', wp_get_referer()));
+        exit;
+    }
+}
+add_action('admin_init', 'ai_blogpost_clear_logs');
