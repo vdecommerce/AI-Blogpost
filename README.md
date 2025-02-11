@@ -73,6 +73,55 @@ A large [Crystal] is prominently placed in the scene, rendered with hyper-realis
 
 The entire composition radiates a perfect balance between realism and mysticism, with stunning details and an atmosphere of natural harmony. The scene should feel like a photograph of an alien yet believable world, where all elements are logically and realistically integrated.
 ```
+### Prompt for Daily Blog Post
+
+```text
+||Title||:
+"Generate a unique title that captures the essence of the day by incorporating philosophical, occult, and spiritual daily correspondences. Combine the following elements in the title:
+
+Date: [date]
+Planet: [Planet]
+Hermetic Principle: [Principle]
+Color: [Color]
+Element: [Element]
+For example: 'Saturday Under Saturn: The Principle of Polarity in Lead and Indigo'."
+
+||Content||
+Meaning and Symbolism
+Provide an in-depth interpretation of the day based on its specific philosophical and occult associations. Explain the significance of each element and how they are interconnected. Use the following structure:
+
+Planet: Describe the influence of [Planet] on the day.
+Element: How does [Element] function as the energetic theme?
+Color: What is the symbolism of [Color] today?
+Animal: What is the meaning of [Animal] as a spiritual guide?
+Number: What energetic significance does [Number] hold?
+Crystal: How does [Crystal] support the energy of the day?
+Plant/Herb: How can [Plant/Herb] be used for healing or magic?
+Chakra: What role does [Chakra] play today in finding balance?
+Tree: What does [Tree] symbolize today?
+Tarot Card: How does [Tarot Card] align with today’s energy?
+Season: How does the current [Season] influence the symbolism?
+World: Describe the theme of cosmic or earthly energies.
+Alchemy: What phase or transformation is represented by [Alchemy]?
+Mythology: Provide insights from relevant pantheons:
+Greek: [pantheon_greek]
+Egyptian: [pantheon_egyptian]
+Celtic: [pantheon_celtic]
+Norse: [pantheon_norse]
+Druidic: [pantheon_druidic]
+Affirmation
+Write a powerful affirmation that aligns with today’s symbolism. For example:
+
+"Today, I embrace the power of [Planet] and work in harmony with the energy of [Element]. I am filled with [Color] and strengthened by [Crystal]."
+
+Ritual
+Offer a simple yet inspiring ritual to harness the day’s energy. For example:
+
+Ritual: Light a candle in the color [Color]. Visualize the energy of [Planet] filling your aura as you hold [Crystal] in your hand and burn a sprig of [Plant/Herb]. Imagine yourself fully aligned with today’s power.
+
+||Category||:
+"Daily Inspiration, [category]"
+```
 
 ### Example Values
 - Planet: Mars
