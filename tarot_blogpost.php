@@ -39,40 +39,9 @@ function ai_blogpost_admin_page() {
     echo '<h1>AI Blogpost Dashboard</h1>';
     
     // Settings Form
-    echo '<div class="dashboard-grid">';
+    echo '<div class="dashboard-content">';
     
-    // Left column - Settings
-    echo '<div class="settings-column">';
-    echo '<form method="post" action="options.php">';
-    settings_fields('ai_blogpost_settings');
-    do_settings_sections('ai_blogpost_settings');
-    
-    // General Settings
-    echo '<div class="settings-group">';
-    echo '<h2>Schedule Settings</h2>';
-    display_general_settings();
-    echo '</div>';
-    
-    // Text Generation Settings
-    echo '<div class="settings-group">';
-    echo '<h2>OpenAI Text Generation</h2>';
-    display_text_settings();
-    echo '</div>';
-    
-    // Image Generation Settings
-    echo '<div class="settings-group">';
-    echo '<h2>DALL·E Image Generation</h2>';
-    display_image_settings();
-    echo '</div>';
-    
-    submit_button('Save Settings');
-    echo '</form>';
-    echo '</div>'; // Close settings-column
-    
-    // Right column - Status and Test
-    echo '<div class="status-column">';
-    
-    // Test Post Section
+    // Test Post Section at the top
     echo '<div class="test-post-section">';
     echo '<div class="test-post-header">';
     echo '<h2>Test Generation</h2>';
@@ -94,6 +63,30 @@ function ai_blogpost_admin_page() {
     }
     echo '</div>'; // Close test-post-section
     
+    // Settings Form
+    echo '<form method="post" action="options.php">';
+    settings_fields('ai_blogpost_settings');
+    do_settings_sections('ai_blogpost_settings');
+    
+    // Settings sections in order
+    echo '<div class="settings-section">';
+    echo '<h2>Schedule Settings</h2>';
+    display_general_settings();
+    echo '</div>';
+    
+    echo '<div class="settings-section">';
+    echo '<h2>OpenAI Text Generation</h2>';
+    display_text_settings();
+    echo '</div>';
+    
+    echo '<div class="settings-section">';
+    echo '<h2>DALL·E Image Generation</h2>';
+    display_image_settings();
+    echo '</div>';
+    
+    submit_button('Save Settings');
+    echo '</form>';
+    
     // Status Panel
     echo '<div class="status-panel">';
     echo '<div class="status-header">';
@@ -107,48 +100,36 @@ function ai_blogpost_admin_page() {
     echo '</div>';
     echo '</div>';
     
-    // Text Generation Status
     echo '<h3>Text Generation</h3>';
     display_api_logs('Text Generation');
     
-    // Image Generation Status
     echo '<h3 style="margin-top: 20px;">Image Generation</h3>';
     display_api_logs('Image Generation');
-    
     echo '</div>'; // Close status-panel
-    echo '</div>'; // Close status-column
     
-    echo '</div>'; // Close dashboard-grid
+    echo '</div>'; // Close dashboard-content
     echo '</div>'; // Close wrap
 
-    // Add dashboard styling
+    // Updated styling for single column layout
     echo '<style>
         .ai-blogpost-dashboard {
-            margin: 20px;
+            max-width: 1200px;
+            margin: 20px auto;
         }
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-top: 20px;
-        }
-        .settings-column,
-        .status-column {
+        .dashboard-content {
             background: #fff;
             padding: 20px;
             border: 1px solid #ccd0d4;
             box-shadow: 0 1px 1px rgba(0,0,0,.04);
         }
-        .settings-group {
+        .settings-section {
             margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #eee;
+            padding: 20px;
+            background: #fff;
+            border: 1px solid #e5e5e5;
+            border-radius: 4px;
         }
-        .settings-group:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
-        }
-        .settings-group h2 {
+        .settings-section h2 {
             margin-top: 0;
             padding-bottom: 10px;
             border-bottom: 1px solid #eee;
@@ -157,12 +138,14 @@ function ai_blogpost_admin_page() {
             margin-bottom: 20px;
             padding: 20px;
             background: #f8f9fa;
+            border: 1px solid #e5e5e5;
             border-radius: 4px;
         }
         .test-post-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-bottom: 10px;
         }
         .test-post-header h2 {
             margin: 0;
@@ -170,6 +153,13 @@ function ai_blogpost_admin_page() {
         .next-post-info {
             margin-top: 10px;
             color: #666;
+        }
+        .status-panel {
+            margin-top: 30px;
+            padding: 20px;
+            background: #fff;
+            border: 1px solid #e5e5e5;
+            border-radius: 4px;
         }
         .status-header {
             display: flex;
@@ -181,29 +171,17 @@ function ai_blogpost_admin_page() {
             display: flex;
             gap: 10px;
         }
-        .log-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
+        .form-table {
+            margin-top: 0;
         }
-        .log-table th,
-        .log-table td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #eee;
+        .form-table th {
+            width: 200px;
         }
-        .log-table tr:hover {
+        .submit {
+            margin-top: 20px;
+            padding: 20px 0;
             background: #f8f9fa;
-        }
-        .description {
-            color: #666;
-            font-style: italic;
-            margin-top: 5px;
-        }
-        @media screen and (max-width: 1200px) {
-            .dashboard-grid {
-                grid-template-columns: 1fr;
-            }
+            border-top: 1px solid #eee;
         }
     </style>';
 }
@@ -476,77 +454,135 @@ remove_action('admin_notices', 'create_test_ai_blogpost');
 add_action('admin_notices', 'create_test_ai_blogpost', 10, 0);
 
 // ------------------ CORRESPONDENTIES LOGICA ------------------
-function ai_blogpost_get_correspondences() {
-    static $data = null;
-    
-    if ($data === null) {
-        // Get categories from settings
-        $categories = array_filter(array_map('trim', explode("\n", 
-            get_cached_option('ai_blogpost_custom_categories', 'tarot'))));
+function ai_blogpost_get_post_data() {
+    try {
+        ai_blogpost_debug_log('Getting post data from dashboard settings');
         
-        $data = array(
-            'categorie' => $categories, // Add categories to correspondences
-            'planeet' => array('Zon', 'Maan', 'Mars', 'Mercurius', 'Jupiter', 'Venus', 'Saturnus'),
-            'regenboogkleur' => array('Rood', 'Oranje', 'Geel', 'Groen', 'Blauw', 'Indigo', 'Violet'),
-            'dag' => array('Zondag', 'Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag'),
-            'hemellichaam'   => array('Zon', 'Maan', 'Mars', 'Mercurius', 'Jupiter', 'Venus', 'Saturnus'),
-            'hermetisch_principe' => array('Geest', 'Overeenkomst', 'Trilling', 'Polariteit', 'Ritme', 'Oorzaak en Gevolg', 'Geslacht'),
-            'mineraal'       => array('Goud', 'Zilver', 'IJzer', 'Kwik', 'Tin', 'Koper', 'Lood'),
-            'geur'           => array('Wierook', 'Sandelhout', 'Muskus', 'Lavendel', 'Cederhout', 'Rozengeur', 'Patchouli'),
-            'plant_kruid'    => array('Zonnebloem', 'Maanbloem', 'Brandnetel', 'Munt', 'Eik', 'Roos', 'Cipres'),
-            'pantheon_grieks' => array('Helios', 'Selene', 'Ares', 'Hermes', 'Zeus', 'Aphrodite', 'Cronus')
+        // Get categories from settings
+        $categories_string = get_cached_option('ai_blogpost_custom_categories', '');
+        ai_blogpost_debug_log('Retrieved categories string:', $categories_string);
+        
+        // Split and clean categories
+        $categories = array_filter(array_map('trim', explode("\n", $categories_string)));
+        
+        if (empty($categories)) {
+            ai_blogpost_debug_log('No categories found, using default');
+            return array(
+                'category' => 'SEO',
+                'focus_keyword' => 'SEO optimalisatie'
+            );
+        }
+        
+        // Pick a random category
+        $selected_category = $categories[array_rand($categories)];
+        ai_blogpost_debug_log('Selected category:', $selected_category);
+        
+        $post_data = array(
+            'category' => $selected_category,
+            'focus_keyword' => $selected_category
         );
-        $data = apply_filters('ai_blogpost_correspondences_data', $data);
+        
+        ai_blogpost_debug_log('Final post data:', $post_data);
+        return $post_data;
+    } catch (Exception $e) {
+        ai_blogpost_debug_log('Error in get_post_data:', $e->getMessage());
+        return array(
+            'category' => 'SEO',
+            'focus_keyword' => 'SEO optimalisatie'
+        );
     }
-
-    return array_map(function($arr) {
-        return $arr[array_rand($arr)];
-    }, $data);
 }
 
 // ------------------ FETCH AI TEXT ------------------
-function fetch_ai_response($correspondences) {
+function fetch_ai_response($post_data) {
     try {
         $api_key = get_cached_option('ai_blogpost_api_key');
         if (empty($api_key)) {
             throw new Exception('API key is missing');
         }
 
-        $prompt = prepare_ai_prompt($correspondences);
+        // Log the start of the request
+        ai_blogpost_log_api_call('Text Generation', true, array(
+            'status' => 'Starting request',
+            'category' => $post_data['category']
+        ));
+
+        $prompt = prepare_ai_prompt($post_data);
         $response = send_ai_request($prompt);
         
         if (!isset($response['choices'][0]['message']['content'])) {
             throw new Exception('Invalid API response format');
         }
 
+        // Log successful response
+        ai_blogpost_log_api_call('Text Generation', true, array(
+            'prompt' => $prompt,
+            'content' => $response['choices'][0]['message']['content'],
+            'status' => 'Content generated successfully',
+            'category' => $post_data['category']
+        ));
+
         return array(
             'content' => $response['choices'][0]['message']['content'],
-            'category' => get_cached_option('ai_blogpost_custom_categories', 'Uncategorized'),
-            'correspondences' => $correspondences
+            'category' => $post_data['category'],
+            'focus_keyword' => $post_data['focus_keyword']
         );
     } catch (Exception $e) {
+        // Log error
+        ai_blogpost_log_api_call('Text Generation', false, array(
+            'error' => $e->getMessage(),
+            'category' => $post_data['category'] ?? 'unknown',
+            'status' => 'Failed: ' . $e->getMessage()
+        ));
         error_log('AI Response Error: ' . $e->getMessage());
         return null;
     }
 }
 
-function prepare_ai_prompt($correspondences) {
-    $base_prompt = get_cached_option('ai_blogpost_prompt');
-    
-    // Simply replace [topic] with the category
-    $prompt = str_replace('[topic]', $correspondences['categorie'], $base_prompt);
-    
-    return $prompt;
+function prepare_ai_prompt($post_data) {
+    try {
+        ai_blogpost_debug_log('Preparing AI prompt with post data:', $post_data);
+        
+        // Using Nederlandse taal voor de prompt
+        $base_prompt = "Schrijf een SEO-geoptimaliseerde blogpost in het Nederlands over {$post_data['category']}. 
+Focus op praktische waarde en inzichten.
+
+||Title||: Maak een SEO-vriendelijke titel die '{$post_data['category']}' als hoofdonderwerp heeft
+
+||Content||: Schrijf de hoofdinhoud volgens deze richtlijnen:
+- Gebruik <article> tags om de content te omvatten
+- Begin met een SEO-geoptimaliseerde <h1> titel
+- Voeg 3-4 informatieve <h2> subtitels toe
+- Schrijf minimaal 800 woorden over {$post_data['category']}
+- Focus op praktische toepassingen en voordelen
+- Voeg concrete tips en voorbeelden toe
+- Gebruik '{$post_data['category']}' op een natuurlijke manier in de tekst
+- Eindig met een duidelijke call-to-action
+- Houd de tekst toegankelijk en informatief
+
+||Category||: {$post_data['category']}
+
+||Meta||: Schrijf een pakkende meta beschrijving met focus op '{$post_data['category']}'";
+        
+        ai_blogpost_debug_log('Generated prompt:', $base_prompt);
+        return $base_prompt;
+        
+    } catch (Exception $e) {
+        ai_blogpost_debug_log('Error in prepare_ai_prompt:', $e->getMessage());
+        throw $e;
+    }
 }
 
 function prepare_dalle_prompt($correspondences) {
     $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
-        'Create a mystical and ethereal tarot-inspired digital art featuring [categorie] symbolism, with magical elements in a dreamlike atmosphere.');
+        'Create a mystical and ethereal digital art featuring [categorie]. Include subtle references to these elements in the background: [alle_categorieen]. Style: dreamlike atmosphere with magical elements.');
     
-    $prompt = $template;
-    foreach ($correspondences as $key => $value) {
-        $prompt = str_replace("[$key]", $value, $prompt);
-    }
+    // Replace all placeholders
+    $prompt = str_replace(
+        ['[categorie]', '[alle_categorieen]'],
+        [$correspondences['categorie'], $correspondences['alle_categorieen']],
+        $template
+    );
     
     return $prompt;
 }
@@ -561,47 +597,32 @@ function send_ai_request($prompt) {
                     array("role" => "user", "content" => $prompt)
                 ),
                 'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
-                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096) // Ensure safe limit
+                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096)
             )),
             'headers' => array(
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . get_cached_option('ai_blogpost_api_key')
             ),
-            'timeout' => 60
+            'timeout' => 90 // Increased timeout
         );
 
-        // Log the request (excluding API key) as 'pending' instead of 'failed'
-        $log_args = $args;
-        $log_args['headers']['Authorization'] = 'Bearer [HIDDEN]';
-        ai_blogpost_log_api_call('Text Generation', true, array(
-            'request' => $log_args,
-            'prompt' => $prompt,
-            'status' => 'Request Sent'
-        ));
-
+        ai_blogpost_debug_log('Sending API request');
         $response = wp_remote_post('https://api.openai.com/v1/chat/completions', $args);
         
         if (is_wp_error($response)) {
-            throw new Exception($response->get_error_message());
+            throw new Exception('API request failed: ' . $response->get_error_message());
         }
         
         $result = json_decode(wp_remote_retrieve_body($response), true);
+        ai_blogpost_debug_log('API response received:', $result);
         
-        // Log the successful response
-        ai_blogpost_log_api_call('Text Generation', true, array(
-            'response' => $result,
-            'prompt' => $prompt,
-            'status' => 'Response Received'
-        ));
+        if (!isset($result['choices'][0]['message']['content'])) {
+            throw new Exception('Invalid API response format');
+        }
         
         return $result;
     } catch (Exception $e) {
-        // Only log as failed for actual errors
-        ai_blogpost_log_api_call('Text Generation', false, array(
-            'error' => $e->getMessage(),
-            'prompt' => $prompt,
-            'status' => 'Error'
-        ));
+        ai_blogpost_debug_log('Error in send_ai_request:', $e->getMessage());
         throw $e;
     }
 }
@@ -738,46 +759,38 @@ function create_ai_blogpost() {
     try {
         ai_blogpost_debug_log('Starting blog post creation');
         
-        $correspondences = ai_blogpost_get_correspondences();
-        ai_blogpost_debug_log('Got correspondences:', $correspondences);
+        $post_data = ai_blogpost_get_post_data();
+        ai_blogpost_debug_log('Got post data:', $post_data);
         
         // Generate text content
-        $ai_result = fetch_ai_response($correspondences);
+        $ai_result = fetch_ai_response($post_data);
         if (!$ai_result) {
             throw new Exception('No AI result received');
         }
-        ai_blogpost_debug_log('Got AI response:', $ai_result);
 
         $parsed_content = parse_ai_content($ai_result['content']);
-        if (empty($parsed_content['title']) || empty($parsed_content['content'])) {
-            throw new Exception('Failed to parse AI content: ' . print_r($parsed_content, true));
-        }
-        ai_blogpost_debug_log('Parsed content:', $parsed_content);
-
-        // Create post
+        
+        // Create post with SEO metadata
         $post_data = array(
             'post_title' => wp_strip_all_tags($parsed_content['title']),
             'post_content' => wpautop($parsed_content['content']),
             'post_status' => 'publish',
             'post_author' => 1,
-            'post_category' => array(get_cat_ID($correspondences['categorie']) ?: 1)
+            'post_category' => array(get_cat_ID($post_data['category']) ?: 1),
+            'meta_input' => array(
+                '_yoast_wpseo_metadesc' => $parsed_content['meta'] ?? '',
+                '_yoast_wpseo_focuskw' => $post_data['focus_keyword']
+            )
         );
-        ai_blogpost_debug_log('Preparing to create post with data:', $post_data);
 
         $post_id = wp_insert_post($post_data);
-        if (is_wp_error($post_id)) {
-            throw new Exception('Failed to create post: ' . $post_id->get_error_message());
-        }
-        ai_blogpost_debug_log('Successfully created post with ID:', $post_id);
-
-        // Handle DALL-E image if enabled
+        
+        // Handle featured image if enabled
         if (get_cached_option('ai_blogpost_dalle_enabled', 0)) {
-            ai_blogpost_debug_log('DALL-E is enabled, generating image');
-            $dalle_prompt = prepare_dalle_prompt($correspondences);
+            $dalle_prompt = "Create a professional blog header image about {$post_data['focus_keyword']}. Style: Modern, clean, and professional.";
             $attach_id = fetch_dalle_image_from_text($dalle_prompt);
             if ($attach_id) {
                 set_post_thumbnail($post_id, $attach_id);
-                ai_blogpost_debug_log('Added featured image:', $attach_id);
             }
         }
 
@@ -881,12 +894,15 @@ function get_cached_option($option_name, $default = '') {
 function ai_blogpost_log_api_call($type, $success, $data) {
     $logs = get_option('ai_blogpost_api_logs', array());
     
-    // Add new log entry
+    // Add new log entry with more details
     $logs[] = array(
         'time' => time(),
         'type' => $type,
         'success' => $success,
-        'data' => $data
+        'data' => array_merge($data, array(
+            'timestamp' => date('Y-m-d H:i:s'),
+            'request_id' => uniqid()
+        ))
     );
     
     // Keep only last 20 entries
@@ -894,77 +910,57 @@ function ai_blogpost_log_api_call($type, $success, $data) {
         $logs = array_slice($logs, -20);
     }
     
+    // Debug log the update
+    ai_blogpost_debug_log('Updating logs:', $logs);
+    
     update_option('ai_blogpost_api_logs', $logs);
 }
 
 // Add new helper function for displaying logs
 function display_api_logs($type) {
     $logs = get_option('ai_blogpost_api_logs', array());
+    ai_blogpost_debug_log('Displaying logs for type:', $type);
+    ai_blogpost_debug_log('All logs:', $logs);
+    
     $filtered_logs = array_filter($logs, function($log) use ($type) {
-        return $log['type'] === $type;
+        return isset($log['type']) && $log['type'] === $type;
     });
-    $filtered_logs = array_reverse(array_slice($filtered_logs, -5)); // Reverse to show newest first
     
     if (empty($filtered_logs)) {
-        echo '<div style="padding: 20px; background: #f8f9fa; border-radius: 4px; text-align: center;">';
-        echo "<p style='margin: 0;'>No {$type} communications logged yet.</p>";
-        echo '</div>';
+        echo '<div class="notice notice-warning"><p>No ' . esc_html($type) . ' logs found.</p></div>';
         return;
     }
 
-    echo '<div class="log-container">';
-    echo '<table class="log-table">
-        <thead>
-            <tr>
-                <th>Time</th>
-                <th>Status</th>
-                <th>Details</th>
-            </tr>
-        </thead>
-        <tbody>';
-    
+    // Show most recent logs first
+    $filtered_logs = array_reverse(array_slice($filtered_logs, -5));
+
+    echo '<div class="log-entries">';
     foreach ($filtered_logs as $log) {
-        $status = isset($log['data']['status']) ? $log['data']['status'] : ($log['success'] ? 'Success' : 'Failed');
-        $details = '';
+        $status_class = $log['success'] ? 'success' : 'error';
         
-        // Format details based on data type
-        if (isset($log['data']['prompt'])) {
-            $details .= "Prompt: " . esc_html($log['data']['prompt']) . "\n";
+        echo '<div class="log-entry ' . $status_class . '">';
+        echo '<div class="log-header">';
+        echo '<div class="log-time">' . date('Y-m-d H:i:s', $log['time']) . '</div>';
+        echo '<div class="log-status">' . ($log['success'] ? '✓ Success' : '✗ Failed') . '</div>';
+        echo '</div>';
+        
+        echo '<div class="log-details">';
+        if (isset($log['data']['status'])) {
+            echo '<div class="log-status-detail">' . esc_html($log['data']['status']) . '</div>';
         }
-        if (isset($log['data']['response'])) {
-            $details .= "Response: " . esc_html(json_encode($log['data']['response'], JSON_PRETTY_PRINT));
+        if (isset($log['data']['category'])) {
+            echo '<div><strong>Category:</strong> ' . esc_html($log['data']['category']) . '</div>';
+        }
+        if (isset($log['data']['prompt'])) {
+            echo '<div class="log-prompt"><strong>Prompt:</strong><pre>' . esc_html($log['data']['prompt']) . '</pre></div>';
         }
         if (isset($log['data']['error'])) {
-            $details .= "Error: " . esc_html($log['data']['error']);
+            echo '<div class="log-error"><strong>Error:</strong><pre>' . esc_html($log['data']['error']) . '</pre></div>';
         }
-        
-        echo sprintf(
-            '<tr>
-                <td>%s</td>
-                <td><span class="status-%s">%s</span></td>
-                <td>
-                    <pre class="log-details">%s</pre>
-                </td>
-            </tr>',
-            date('Y-m-d H:i:s', $log['time']),
-            $log['success'] ? 'success' : 'error',
-            esc_html($status),
-            $details
-        );
+        echo '</div>';
+        echo '</div>';
     }
-    
-    echo '</tbody></table></div>';
-
-    // Add styling
-    echo '<style>
-        .log-container { margin-bottom: 20px; }
-        .log-table { width: 100%; border-collapse: collapse; }
-        .log-table th, .log-table td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
-        .log-table th { background: #f8f9fa; }
-        .status-success { color: #46b450; }
-        .status-error { color: #dc3232; }
-        .log-details { margin: 0; white-space: pre-wrap; font-size: 12px; max-height: 100px; overflow-y: auto; }
-    </style>';
+    echo '</div>';
 }
 
 // Add this function for clearing logs
