@@ -1,9 +1,9 @@
 <?php
 /*
 Plugin Name: AI-Generated Tarot Blogpost with DALL·E
-Description: Genereert een dagelijkse/wekelijkse blogpost met tarot-achtige correspondenties en een DALL·E afbeelding. DALL·E prompt komt uit de tekst output en DALL·E model is instelbaar in het dashboard. Nu met datum shortcode [datum].
+Description: Generates a daily/weekly blog post with a DALL·E image. The DALL·E prompt comes from the text output, and the DALL·E model can be configured in the dashboard. 
 Version: 1.0
-Author: Your Name
+Author: MrHerrie
 */
 
 // ------------------ SETTINGS INIT ------------------
