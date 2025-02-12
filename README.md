@@ -71,7 +71,7 @@ Design a visually engaging and modern header image specifically for a blog post 
 
 ## Support
 
-Visit our [GitHub repository](https://github.com/username/AI-Generated-Tarot-Blogpost-with-DALL-E)
+Visit our [GitHub repository](https://github.com/vdecommerce/AI-Blogpost)
 
 ## License
 
