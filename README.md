@@ -17,11 +17,21 @@ A WordPress plugin that automatically generates daily or weekly blog posts with 
 - Dynamic model selection
 - Robust error handling
 
-### Content Generation
+## Content Generation
+
+### System Role
+
 ```text
-||Title||: SEO-optimized titles
-||Content||: Structured blog content
-||Category||: Automatic categorization
+Write for a website a SEO blogpost with the [category] as keyword
+```
+### Content Template
+
+```text
+Write for a website a SEO blogpost with the [category] as keyword. Use sections:
+||Title||:
+||Content||:
+||Category||:[category]
+Write the content of the content section within the <article></article> tags and use <p>, <h1>, and <h2>.
 ```
 
 ### Image Settings
@@ -49,18 +59,7 @@ A WordPress plugin that automatically generates daily or weekly blog posts with 
 
 ### DALL·E Prompt Template
 ```text
-Create a professional image about [category]:
-Style: Modern, mystical
-Theme: [category] symbolism
-Format: Blog header
-Quality: Premium
-```
-
-### Content Template
-```text
-||Title||: [category] Insights
-||Content||: Structured article
-||Category||: [category]
+Design a visually engaging and modern header image specifically for a blog post on the theme of [category]. This image should serve as the focal point at the top of the blog post, drawing readers in immediately. Ensure the composition is balanced and detailed with high-quality visuals. Embrace a clean, professional style that incorporates elements directly related to the topic, symbolizing [category] effectively. The background should enhance the main subject without overwhelming it, while a harmonious, appealing color scheme is used throughout. A subtle depth of field effect should be applied to ensure the key elements stand out, making the image not only eye-catching but perfectly suited as a blog post header.
 ```
 
 ## Requirements
