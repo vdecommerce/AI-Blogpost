@@ -1,6 +1,6 @@
-# AI-Generated Tarot Blogpost with DALL·E
+# AI-Generated Blogpost with DALL·E
 
-A WordPress plugin that automatically generates daily or weekly blog posts with tarot-like correspondences and DALL·E images.
+A WordPress plugin that automatically generates daily or weekly blog posts with DALL·E feutured image.
 
 ## Core Features
 
