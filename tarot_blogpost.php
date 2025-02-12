@@ -628,14 +628,14 @@ function send_ai_request($prompt) {
 }
 
 // ------------------ FETCH DALL·E IMAGE ------------------
-function fetch_dalle_image_from_text($dalle_prompt) {
+function fetch_dalle_image_from_text($dalle_prompt, $category) {
     $dalle_enabled = get_cached_option('ai_blogpost_dalle_enabled', 0);
     if (!$dalle_enabled) {
         return null;
     }
 
     if (empty($dalle_prompt)) {
-        error_log('No DALL·E prompt provided');
+        ai_blogpost_debug_log('No DALL-E prompt provided');
         return null;
     }
 
@@ -739,7 +739,8 @@ function fetch_dalle_image_from_text($dalle_prompt) {
         ai_blogpost_log_api_call('Image Generation', true, array(
             'prompt' => $dalle_prompt,
             'image_id' => $attach_id,
-            'status' => 'Image Generated'
+            'category' => $category,
+            'status' => 'Image Generated Successfully'
         ));
         
         return $attach_id;
@@ -748,6 +749,7 @@ function fetch_dalle_image_from_text($dalle_prompt) {
         ai_blogpost_log_api_call('Image Generation', false, array(
             'error' => $e->getMessage(),
             'prompt' => $dalle_prompt,
+            'category' => $category,
             'status' => 'Error: ' . $e->getMessage()
         ));
         return null;
@@ -787,8 +789,20 @@ function create_ai_blogpost() {
         
         // Handle featured image if enabled
         if (get_cached_option('ai_blogpost_dalle_enabled', 0)) {
-            $dalle_prompt = "Create a professional blog header image about {$post_data['focus_keyword']}. Style: Modern, clean, and professional.";
-            $attach_id = fetch_dalle_image_from_text($dalle_prompt);
+            // Use the template from dashboard settings
+            $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
+                'Create a professional blog header image about [categorie]. Style: Modern and professional.');
+            
+            // Prepare image prompt with category
+            $dalle_prompt = str_replace(
+                ['[categorie]'],
+                [$post_data['category']],
+                $template
+            );
+            
+            ai_blogpost_debug_log('DALL-E prompt:', $dalle_prompt);
+            
+            $attach_id = fetch_dalle_image_from_text($dalle_prompt, $post_data['category']);
             if ($attach_id) {
                 set_post_thumbnail($post_id, $attach_id);
             }
@@ -920,7 +934,6 @@ function ai_blogpost_log_api_call($type, $success, $data) {
 function display_api_logs($type) {
     $logs = get_option('ai_blogpost_api_logs', array());
     ai_blogpost_debug_log('Displaying logs for type:', $type);
-    ai_blogpost_debug_log('All logs:', $logs);
     
     $filtered_logs = array_filter($logs, function($log) use ($type) {
         return isset($log['type']) && $log['type'] === $type;
@@ -934,33 +947,80 @@ function display_api_logs($type) {
     // Show most recent logs first
     $filtered_logs = array_reverse(array_slice($filtered_logs, -5));
 
-    echo '<div class="log-entries">';
+    // Add table styles
+    echo '<style>
+        .log-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 10px 0; 
+            background: #fff;
+        }
+        .log-table th, .log-table td { 
+            padding: 12px; 
+            text-align: left; 
+            border: 1px solid #e1e1e1; 
+        }
+        .log-table th { 
+            background: #f5f5f5; 
+            font-weight: bold; 
+        }
+        .log-status.success { 
+            color: #46b450; 
+            font-weight: bold; 
+        }
+        .log-status.error { 
+            color: #dc3232; 
+            font-weight: bold; 
+        }
+        .log-details pre {
+            margin: 5px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 1px solid #e2e4e7;
+            overflow-x: auto;
+        }
+        .log-time {
+            white-space: nowrap;
+        }
+    </style>';
+
+    echo '<table class="log-table">';
+    echo '<thead>';
+    echo '<tr>';
+    echo '<th>Time</th>';
+    echo '<th>Status</th>';
+    echo '<th>Category</th>';
+    echo '<th>Details</th>';
+    echo '</tr>';
+    echo '</thead>';
+    echo '<tbody>';
+
     foreach ($filtered_logs as $log) {
         $status_class = $log['success'] ? 'success' : 'error';
+        $status_text = $log['success'] ? '✓ Success' : '✗ Failed';
         
-        echo '<div class="log-entry ' . $status_class . '">';
-        echo '<div class="log-header">';
-        echo '<div class="log-time">' . date('Y-m-d H:i:s', $log['time']) . '</div>';
-        echo '<div class="log-status">' . ($log['success'] ? '✓ Success' : '✗ Failed') . '</div>';
-        echo '</div>';
+        echo '<tr>';
+        echo '<td class="log-time">' . date('Y-m-d H:i:s', $log['time']) . '</td>';
+        echo '<td class="log-status ' . $status_class . '">' . $status_text . '</td>';
+        echo '<td>' . (isset($log['data']['category']) ? esc_html($log['data']['category']) : '-') . '</td>';
+        echo '<td class="log-details">';
         
-        echo '<div class="log-details">';
         if (isset($log['data']['status'])) {
-            echo '<div class="log-status-detail">' . esc_html($log['data']['status']) . '</div>';
-        }
-        if (isset($log['data']['category'])) {
-            echo '<div><strong>Category:</strong> ' . esc_html($log['data']['category']) . '</div>';
+            echo '<div><strong>Status:</strong> ' . esc_html($log['data']['status']) . '</div>';
         }
         if (isset($log['data']['prompt'])) {
-            echo '<div class="log-prompt"><strong>Prompt:</strong><pre>' . esc_html($log['data']['prompt']) . '</pre></div>';
+            echo '<div><strong>Prompt:</strong><pre>' . esc_html($log['data']['prompt']) . '</pre></div>';
         }
         if (isset($log['data']['error'])) {
-            echo '<div class="log-error"><strong>Error:</strong><pre>' . esc_html($log['data']['error']) . '</pre></div>';
+            echo '<div><strong>Error:</strong><pre>' . esc_html($log['data']['error']) . '</pre></div>';
         }
-        echo '</div>';
-        echo '</div>';
+        
+        echo '</td>';
+        echo '</tr>';
     }
-    echo '</div>';
+    
+    echo '</tbody>';
+    echo '</table>';
 }
 
 // Add this function for clearing logs
