@@ -631,22 +631,24 @@ function fetch_dalle_image_from_text($image_data) {
             throw new Exception('Invalid image data structure');
         }
 
+        $category = $image_data['category'];
+
         // Prepare DALL-E prompt
         $dalle_prompt = str_replace(
-            ['[category]', '[categorie]'], // Support legacy placeholders
-            $image_data['category'],
+            ['[category]', '[categorie]'],
+            $category,
             $image_data['template']
         );
 
         ai_blogpost_debug_log('DALL-E Prompt Data:', [
-            'category' => $image_data['category'],
+            'category' => $category,
             'prompt' => $dalle_prompt
         ]);
 
         // Initial log
         ai_blogpost_log_api_call('Image Generation', true, [
             'prompt' => $dalle_prompt,
-            'category' => $image_data['category'],
+            'category' => $category,
             'status' => 'Starting image generation'
         ]);
 
@@ -692,10 +694,10 @@ function fetch_dalle_image_from_text($image_data) {
         }
 
         // Save image
-        $image_data = base64_decode($body['data'][0]['b64_json']);
-        $filename = 'dalle-' . sanitize_title($image_data['category']) . '-' . time() . '.png';
+        $decoded_image = base64_decode($body['data'][0]['b64_json']);
+        $filename = 'dalle-' . sanitize_title($category) . '-' . time() . '.png';
         
-        $upload = wp_upload_bits($filename, null, $image_data);
+        $upload = wp_upload_bits($filename, null, $decoded_image);
         if (!empty($upload['error'])) {
             throw new Exception('Failed to save image: ' . $upload['error']);
         }
@@ -720,7 +722,7 @@ function fetch_dalle_image_from_text($image_data) {
         // Log success
         ai_blogpost_log_api_call('Image Generation', true, [
             'prompt' => $dalle_prompt,
-            'category' => $image_data['category'],
+            'category' => $category,
             'image_id' => $attach_id,
             'status' => 'Image Generated Successfully'
         ]);
@@ -732,7 +734,7 @@ function fetch_dalle_image_from_text($image_data) {
         ai_blogpost_log_api_call('Image Generation', false, [
             'error' => $e->getMessage(),
             'prompt' => $dalle_prompt ?? '',
-            'category' => $image_data['category'] ?? 'unknown',
+            'category' => $category ?? 'unknown',
             'status' => 'Error: ' . $e->getMessage()
         ]);
         
