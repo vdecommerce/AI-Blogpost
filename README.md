@@ -43,7 +43,7 @@ Write the content of the content section within the <article></article> tags and
 ## Configuration
 
 ### Basic Setup
-1. Upload to `/wp-content/plugins/ai-blogpost`
+1. Upload to `/wp-content/plugins/`
 2. Activate plugin
 3. Enter OpenAI API key
 4. Configure posting schedule
