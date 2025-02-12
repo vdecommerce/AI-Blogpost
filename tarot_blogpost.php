@@ -628,130 +628,123 @@ function send_ai_request($prompt) {
 }
 
 // ------------------ FETCH DALL·E IMAGE ------------------
-function fetch_dalle_image_from_text($dalle_prompt, $category) {
+function fetch_dalle_image_from_text($image_data) {
     $dalle_enabled = get_cached_option('ai_blogpost_dalle_enabled', 0);
     if (!$dalle_enabled) {
         return null;
     }
 
-    if (empty($dalle_prompt)) {
-        ai_blogpost_debug_log('No DALL-E prompt provided');
-        return null;
-    }
-
-    $api_key = get_cached_option('ai_blogpost_dalle_api_key', '');
-    if (empty($api_key)) {
-        error_log('DALL·E API key is missing');
-        return null;
-    }
-
-    $size = get_cached_option('ai_blogpost_dalle_size', '1024x1024');
-    $dalle_style = get_cached_option('ai_blogpost_dalle_style', '');
-    $dalle_quality = get_cached_option('ai_blogpost_dalle_quality', '');
-    $dalle_model = get_cached_option('ai_blogpost_dalle_model', 'dall-e-3');
-
-    // Prepare the payload
-    $payload = array(
-        'model' => $dalle_model,
-        'prompt' => $dalle_prompt,
-        'n' => 1,
-        'size' => $size,
-        'response_format' => 'b64_json'
-    );
-
-    if (!empty($dalle_style)) {
-        $payload['style'] = $dalle_style;
-    }
-    if (!empty($dalle_quality)) {
-        $payload['quality'] = $dalle_quality;
-    }
-
-    // Debug log
-    error_log('DALL·E Request Payload: ' . print_r($payload, true));
-
     try {
-        // Log initial request as success with 'Request Sent' status
-        ai_blogpost_log_api_call('Image Generation', true, array(
-            'prompt' => $dalle_prompt,
-            'settings' => $payload,
-            'status' => 'Request Sent'
-        ));
-        
-        $response = wp_remote_post('https://api.openai.com/v1/images/generations', array(
-            'body' => json_encode($payload),
-            'headers' => array(
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . $api_key
-            ),
-            'timeout' => 60
-        ));
-
-        if(is_wp_error($response)) {
-            throw new Exception($response->get_error_message());
+        // Validate image data
+        if (!is_array($image_data) || empty($image_data['category']) || empty($image_data['template'])) {
+            throw new Exception('Invalid image data structure');
         }
 
-        // Log raw response for debugging
-        error_log('DALL·E Raw Response: ' . wp_remote_retrieve_body($response));
-        
-        $response_body = wp_remote_retrieve_body($response);
-        $decoded_response = json_decode($response_body,true);
-        if(empty($decoded_response['data'][0]['b64_json'])){
-            error_log('DALL·E returned no base64 image data. Response: '.$response_body);
-            return null;
-        }
-
-        $image_base64 = $decoded_response['data'][0]['b64_json'];
-        $image_data = base64_decode($image_base64);
-        if($image_data===false){
-            error_log('Failed to decode base64 image data.');
-            return null;
-        }
-
-        $filename='dalle_image_'.time().'.png';
-        $upload = wp_upload_bits($filename,null,$image_data);
-        if($upload['error']){
-            error_log('Image upload failed: '.$upload['error']);
-            return null;
-        }
-
-        require_once(ABSPATH.'wp-admin/includes/image.php');
-        require_once(ABSPATH.'wp-admin/includes/file.php');
-        require_once(ABSPATH.'wp-admin/includes/media.php');
-
-        $wp_filetype = wp_check_filetype($upload['file'],null);
-        $attachment = array(
-            'post_mime_type'=>$wp_filetype['type'],
-            'post_title'=>sanitize_file_name($filename),
-            'post_content'=>'',
-            'post_status'=>'inherit'
+        // Prepare DALL-E prompt
+        $dalle_prompt = str_replace(
+            ['[category]', '[categorie]'],
+            $image_data['category'],
+            $image_data['template']
         );
 
-        $attach_id = wp_insert_attachment($attachment,$upload['file']);
-        if(is_wp_error($attach_id)){
-            error_log('Failed to insert attachment: '.$attach_id->get_error_message());
-            return null;
+        ai_blogpost_debug_log('DALL-E Prompt Data:', [
+            'category' => $image_data['category'],
+            'prompt' => $dalle_prompt
+        ]);
+
+        // Initial log
+        ai_blogpost_log_api_call('Image Generation', true, [
+            'prompt' => $dalle_prompt,
+            'category' => $image_data['category'],
+            'status' => 'Starting image generation'
+        ]);
+
+        // API request setup
+        $api_key = get_cached_option('ai_blogpost_dalle_api_key');
+        if (empty($api_key)) {
+            throw new Exception('DALL-E API key missing');
         }
 
-        $attach_data = wp_generate_attachment_metadata($attach_id,$upload['file']);
-        wp_update_attachment_metadata($attach_id,$attach_data);
+        $payload = [
+            'model' => get_cached_option('ai_blogpost_dalle_model', 'dall-e-3'),
+            'prompt' => $dalle_prompt,
+            'n' => 1,
+            'size' => get_cached_option('ai_blogpost_dalle_size', '1024x1024'),
+            'response_format' => 'b64_json'
+        ];
 
-        // Log final success with more details
-        ai_blogpost_log_api_call('Image Generation', true, array(
-            'prompt' => $dalle_prompt,
-            'image_id' => $attach_id,
-            'category' => $category,
-            'status' => 'Image Generated Successfully'
-        ));
+        // Add optional parameters
+        if ($style = get_cached_option('ai_blogpost_dalle_style')) {
+            $payload['style'] = $style;
+        }
+        if ($quality = get_cached_option('ai_blogpost_dalle_quality')) {
+            $payload['quality'] = $quality;
+        }
+
+        // Make API request
+        $response = wp_remote_post('https://api.openai.com/v1/images/generations', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $api_key,
+                'Content-Type' => 'application/json'
+            ],
+            'body' => json_encode($payload),
+            'timeout' => 60
+        ]);
+
+        if (is_wp_error($response)) {
+            throw new Exception('API request failed: ' . $response->get_error_message());
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (empty($body['data'][0]['b64_json'])) {
+            throw new Exception('No image data in response');
+        }
+
+        // Save image
+        $image_data = base64_decode($body['data'][0]['b64_json']);
+        $filename = 'dalle-' . sanitize_title($image_data['category']) . '-' . time() . '.png';
         
-        return $attach_id;
-    } catch (Exception $e) {
-        // Only log as failed for actual errors
-        ai_blogpost_log_api_call('Image Generation', false, array(
-            'error' => $e->getMessage(),
+        $upload = wp_upload_bits($filename, null, $image_data);
+        if (!empty($upload['error'])) {
+            throw new Exception('Failed to save image: ' . $upload['error']);
+        }
+
+        // Create attachment
+        $attachment = [
+            'post_mime_type' => wp_check_filetype($filename)['type'],
+            'post_title' => sanitize_file_name($filename),
+            'post_content' => '',
+            'post_status' => 'inherit'
+        ];
+
+        $attach_id = wp_insert_attachment($attachment, $upload['file']);
+        if (is_wp_error($attach_id)) {
+            throw new Exception('Failed to create attachment');
+        }
+
+        require_once(ABSPATH . 'wp-admin/includes/image.php');
+        $attach_data = wp_generate_attachment_metadata($attach_id, $upload['file']);
+        wp_update_attachment_metadata($attach_id, $attach_data);
+
+        // Log success
+        ai_blogpost_log_api_call('Image Generation', true, [
             'prompt' => $dalle_prompt,
-            'category' => $category,
+            'category' => $image_data['category'],
+            'image_id' => $attach_id,
+            'status' => 'Image Generated Successfully'
+        ]);
+
+        return $attach_id;
+
+    } catch (Exception $e) {
+        // Log error
+        ai_blogpost_log_api_call('Image Generation', false, [
+            'error' => $e->getMessage(),
+            'prompt' => $dalle_prompt ?? '',
+            'category' => $image_data['category'] ?? 'unknown',
             'status' => 'Error: ' . $e->getMessage()
-        ));
+        ]);
+        
         return null;
     }
 }
@@ -773,7 +766,7 @@ function create_ai_blogpost() {
         $parsed_content = parse_ai_content($ai_result['content']);
         
         // Create post with SEO metadata
-        $post_data = array(
+        $post_args = array(
             'post_title' => wp_strip_all_tags($parsed_content['title']),
             'post_content' => wpautop($parsed_content['content']),
             'post_status' => 'publish',
@@ -785,24 +778,23 @@ function create_ai_blogpost() {
             )
         );
 
-        $post_id = wp_insert_post($post_data);
+        $post_id = wp_insert_post($post_args);
         
         // Handle featured image if enabled
         if (get_cached_option('ai_blogpost_dalle_enabled', 0)) {
             // Use the template from dashboard settings
             $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
-                'Create a professional blog header image about [categorie]. Style: Modern and professional.');
+                'Create a professional blog header image about [category]. Style: Modern and professional.');
             
-            // Prepare image prompt with category
-            $dalle_prompt = str_replace(
-                ['[categorie]'],
-                [$post_data['category']],
-                $template
+            // Create image data with category
+            $image_data = array(
+                'category' => $post_data['category'],
+                'template' => $template
             );
             
-            ai_blogpost_debug_log('DALL-E prompt:', $dalle_prompt);
+            ai_blogpost_debug_log('Image generation data:', $image_data);
             
-            $attach_id = fetch_dalle_image_from_text($dalle_prompt, $post_data['category']);
+            $attach_id = fetch_dalle_image_from_text($image_data);
             if ($attach_id) {
                 set_post_thumbnail($post_id, $attach_id);
             }
