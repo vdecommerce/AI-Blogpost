@@ -233,13 +233,7 @@ function display_text_settings() {
     echo '<tr>';
     echo '<th><label for="ai_blogpost_model">GPT Model</label></th>';
     echo '<td>';
-    echo '<select name="ai_blogpost_model" id="ai_blogpost_model">';
-    $model = get_cached_option('ai_blogpost_model', 'gpt-4');
-    $models = array('gpt-4', 'gpt-3.5-turbo');
-    foreach ($models as $m) {
-        echo '<option value="' . esc_attr($m) . '" ' . selected($model, $m, false) . '>' . esc_html($m) . '</option>';
-    }
-    echo '</select>';
+    display_model_dropdown('gpt');
     echo '</td>';
     echo '</tr>';
 
@@ -314,6 +308,8 @@ function display_text_settings() {
     echo '</td>';
     echo '</tr>';
     
+    add_refresh_models_button(); // Add the refresh models button here
+    
     echo '</table>';
 }
 
@@ -342,13 +338,7 @@ function display_image_settings() {
     echo '<tr>';
     echo '<th><label for="ai_blogpost_dalle_model">DALL-E Model</label></th>';
     echo '<td>';
-    echo '<select name="ai_blogpost_dalle_model" id="ai_blogpost_dalle_model">';
-    $model = get_cached_option('ai_blogpost_dalle_model', 'dall-e-3');
-    $models = array('dall-e-3', 'dall-e-2');
-    foreach ($models as $m) {
-        echo '<option value="' . esc_attr($m) . '" ' . selected($model, $m, false) . '>' . esc_html($m) . '</option>';
-    }
-    echo '</select>';
+    display_model_dropdown('dalle');
     echo '</td>';
     echo '</tr>';
 
@@ -400,9 +390,9 @@ function display_image_settings() {
     echo '<td>';
     echo '<textarea name="ai_blogpost_dalle_prompt_template" id="ai_blogpost_dalle_prompt_template" rows="3" class="large-text code">';
     echo esc_textarea(get_cached_option('ai_blogpost_dalle_prompt_template', 
-        'Create a mystical and ethereal tarot-inspired digital art featuring [categorie] symbolism, with magical elements in a dreamlike atmosphere.'));
+        'Create a professional blog header image about [category]. Include visual elements that represent [category] in a modern and engaging style. Style: Clean, professional, with subtle symbolism.'));
     echo '</textarea>';
-    echo '<p class="description">Template for generating DALL-E prompts. Use [categorie] for category placeholder.</p>';
+    echo '<p class="description">Template for generating DALL-E prompts. Use [category] as the placeholder for the selected category.</p>';
     echo '</td>';
     echo '</tr>';
     
@@ -543,29 +533,30 @@ function prepare_ai_prompt($post_data) {
     try {
         ai_blogpost_debug_log('Preparing AI prompt with post data:', $post_data);
         
-        // Using Nederlandse taal voor de prompt
-        $base_prompt = "Schrijf een SEO-geoptimaliseerde blogpost in het Nederlands over {$post_data['category']}. 
-Focus op praktische waarde en inzichten.
+        // Get prompt template from dashboard settings
+        $base_prompt = get_cached_option('ai_blogpost_prompt', 
+            "Write a blog post about [topic]. Structure the content as follows:
 
-||Title||: Maak een SEO-vriendelijke titel die '{$post_data['category']}' als hoofdonderwerp heeft
+||Title||: Create an engaging, SEO-friendly title
 
-||Content||: Schrijf de hoofdinhoud volgens deze richtlijnen:
-- Gebruik <article> tags om de content te omvatten
-- Begin met een SEO-geoptimaliseerde <h1> titel
-- Voeg 3-4 informatieve <h2> subtitels toe
-- Schrijf minimaal 800 woorden over {$post_data['category']}
-- Focus op praktische toepassingen en voordelen
-- Voeg concrete tips en voorbeelden toe
-- Gebruik '{$post_data['category']}' op een natuurlijke manier in de tekst
-- Eindig met een duidelijke call-to-action
-- Houd de tekst toegankelijk en informatief
+||Content||: Write the main content here, using proper HTML structure:
+- Use <article> tags to wrap the content
+- Use <h1>, <h2> for headings
+- Use <p> for paragraphs
+- Include relevant subheadings
+- Add a strong conclusion
 
-||Category||: {$post_data['category']}
+||Category||: Suggest the most appropriate category for this post");
 
-||Meta||: Schrijf een pakkende meta beschrijving met focus op '{$post_data['category']}'";
+        // Replace placeholders with actual category
+        $prompt = str_replace(
+            ['[topic]', '[category]', '[focus_keyword]'],
+            $post_data['category'],
+            $base_prompt
+        );
         
-        ai_blogpost_debug_log('Generated prompt:', $base_prompt);
-        return $base_prompt;
+        ai_blogpost_debug_log('Generated prompt:', $prompt);
+        return $prompt;
         
     } catch (Exception $e) {
         ai_blogpost_debug_log('Error in prepare_ai_prompt:', $e->getMessage());
@@ -575,12 +566,12 @@ Focus op praktische waarde en inzichten.
 
 function prepare_dalle_prompt($correspondences) {
     $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
-        'Create a mystical and ethereal digital art featuring [categorie]. Include subtle references to these elements in the background: [alle_categorieen]. Style: dreamlike atmosphere with magical elements.');
+        'Create a professional blog header image about [category]. Style: Modern and professional with relevant symbolism.');
     
-    // Replace all placeholders
+    // Replace all placeholders with [category]
     $prompt = str_replace(
-        ['[categorie]', '[alle_categorieen]'],
-        [$correspondences['categorie'], $correspondences['alle_categorieen']],
+        ['[category]', '[categorie]', '[alle_categorieen]'],
+        $correspondences['category'],
         $template
     );
     
@@ -642,7 +633,7 @@ function fetch_dalle_image_from_text($image_data) {
 
         // Prepare DALL-E prompt
         $dalle_prompt = str_replace(
-            ['[category]', '[categorie]'],
+            ['[category]', '[categorie]'], // Support legacy placeholders
             $image_data['category'],
             $image_data['template']
         );
@@ -1032,3 +1023,128 @@ function ai_blogpost_debug_log($message, $data = null) {
     }
     error_log($log);
 }
+
+function fetch_openai_models() {
+    try {
+        $api_key = get_cached_option('ai_blogpost_api_key');
+        if (empty($api_key)) {
+            throw new Exception('API key is missing');
+        }
+
+        $response = wp_remote_get('https://api.openai.com/v1/models', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $api_key,
+                'Content-Type' => 'application/json'
+            ],
+            'timeout' => 30
+        ]);
+
+        if (is_wp_error($response)) {
+            throw new Exception('Failed to fetch models: ' . $response->get_error_message());
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (!isset($body['data'])) {
+            throw new Exception('Invalid API response format');
+        }
+
+        // Filter for GPT and DALL-E models
+        $gpt_models = [];
+        $dalle_models = [];
+        foreach ($body['data'] as $model) {
+            if (strpos($model['id'], 'gpt') !== false) {
+                $gpt_models[] = $model['id'];
+            } elseif (strpos($model['id'], 'dall-e') !== false) {
+                $dalle_models[] = $model['id'];
+            }
+        }
+
+        update_option('ai_blogpost_available_gpt_models', $gpt_models);
+        update_option('ai_blogpost_available_dalle_models', $dalle_models);
+        return true;
+
+    } catch (Exception $e) {
+        ai_blogpost_debug_log('Error fetching models:', $e->getMessage());
+        return false;
+    }
+}
+
+// Add this to the settings save action
+function ai_blogpost_save_settings() {
+    if (isset($_POST['ai_blogpost_api_key'])) {
+        $api_key = sanitize_text_field($_POST['ai_blogpost_api_key']);
+        update_option('ai_blogpost_api_key', $api_key);
+        fetch_openai_models(); // Fetch models after saving API key
+    }
+}
+add_action('admin_init', 'ai_blogpost_save_settings');
+
+// Modify the model dropdowns in display_text_settings() and display_image_settings()
+function display_model_dropdown($type = 'gpt') {
+    $stored_models = get_option($type === 'gpt' ? 'ai_blogpost_available_gpt_models' : 'ai_blogpost_available_dalle_models', []);
+    $current_model = get_cached_option($type === 'gpt' ? 'ai_blogpost_model' : 'ai_blogpost_dalle_model');
+    $default_models = $type === 'gpt' ? ['gpt-4', 'gpt-3.5-turbo'] : ['dall-e-3', 'dall-e-2'];
+    
+    $models = !empty($stored_models) ? $stored_models : $default_models;
+
+    echo '<select name="' . ($type === 'gpt' ? 'ai_blogpost_model' : 'ai_blogpost_dalle_model') . '">';
+    foreach ($models as $model) {
+        echo '<option value="' . esc_attr($model) . '" ' . selected($current_model, $model, false) . '>';
+        echo esc_html($model);
+        echo '</option>';
+    }
+    echo '</select>';
+    
+    if (empty($stored_models)) {
+        echo '<p class="description">Save API key to fetch available models</p>';
+    }
+}
+
+// Add to the settings page
+function add_refresh_models_button() {
+    echo '<tr>';
+    echo '<th>Available Models</th>';
+    echo '<td>';
+    echo '<button type="button" class="button" id="refresh-models">Refresh Available Models</button>';
+    echo '<span class="spinner" style="float: none; margin-left: 4px;"></span>';
+    echo '<p class="description">Click to fetch available models from OpenAI</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // Add JavaScript for the refresh button
+    ?>
+    <script>
+    jQuery(document).ready(function($) {
+        $('#refresh-models').click(function() {
+            var $button = $(this);
+            var $spinner = $button.next('.spinner');
+            
+            $button.prop('disabled', true);
+            $spinner.addClass('is-active');
+            
+            $.post(ajaxurl, {
+                action: 'refresh_openai_models',
+                nonce: '<?php echo wp_create_nonce('refresh_models_nonce'); ?>'
+            }, function(response) {
+                if (response.success) {
+                    location.reload();
+                } else {
+                    alert('Failed to fetch models. Please check your API key.');
+                }
+            }).always(function() {
+                $button.prop('disabled', false);
+                $spinner.removeClass('is-active');
+            });
+        });
+    });
+    </script>
+    <?php
+}
+
+// Add the AJAX handler
+function handle_refresh_models() {
+    check_ajax_referer('refresh_models_nonce', 'nonce');
+    $success = fetch_openai_models();
+    wp_send_json_success(['success' => $success]);
+}
+add_action('wp_ajax_refresh_openai_models', 'handle_refresh_models');
