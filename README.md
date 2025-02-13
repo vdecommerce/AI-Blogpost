@@ -2,6 +2,9 @@
 
 A WordPress plugin that automatically generates daily or weekly blog posts with DALL·E featured images in multiple languages.
 
+![screenshot](https://github.com/user-attachments/assets/57d70583-90e7-4dea-98bf-2bbecc7684b4)
+
+
 ## ✨ Core Features
 
 - 🤖 Automated blog post generation using OpenAI's GPT models
