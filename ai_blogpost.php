@@ -901,42 +901,58 @@ function parse_ai_content($ai_content) {
 
 // ------------------ CRON SCHEDULING ------------------
 function ai_blogpost_schedule_cron() {
-    $frequency = get_cached_option('ai_blogpost_post_frequency','daily');
-    $is_scheduled = get_cached_option('ai_blogpost_is_scheduled',false);
-
-    if($frequency=='weekly'){
-        add_filter('cron_schedules','ai_blogpost_weekly_schedule');
-    }
-
-    if(!$is_scheduled){
-        if($frequency=='daily'){
-            wp_schedule_event(time(),'daily','ai_blogpost_cron_hook');
-        } elseif($frequency=='weekly'){
-            wp_schedule_event(time(),'weekly','ai_blogpost_cron_hook');
-        }
-        update_option('ai_blogpost_is_scheduled',true);
-    }
-}
-add_action('wp_loaded','ai_blogpost_schedule_cron');
-
-function ai_blogpost_weekly_schedule($schedules){
-    if(!isset($schedules['weekly'])){
-        $schedules['weekly']=array(
-            'interval'=>604800, // 1 week
-            'display'=>__('Once Weekly')
-        );
-    }
-    return $schedules;
-}
-
-add_action('ai_blogpost_cron_hook','create_ai_blogpost');
-
-// Deactivatie
-function ai_blogpost_deactivation(){
+    $frequency = get_option('ai_blogpost_post_frequency', 'daily'); // Use get_option directly
+    $is_scheduled = get_option('ai_blogpost_is_scheduled', false);
+    
+    // Clear existing schedule
     wp_clear_scheduled_hook('ai_blogpost_cron_hook');
-    update_option('ai_blogpost_is_scheduled',false);
+    
+    // Add weekly schedule if needed
+    if($frequency == 'weekly') {
+        add_filter('cron_schedules', 'ai_blogpost_weekly_schedule');
+    }
+    
+    // Schedule new cron based on current frequency
+    if($frequency == 'daily') {
+        wp_schedule_event(strtotime('tomorrow 00:00:00'), 'daily', 'ai_blogpost_cron_hook');
+    } elseif($frequency == 'weekly') {
+        wp_schedule_event(strtotime('next monday 00:00:00'), 'weekly', 'ai_blogpost_cron_hook');
+    }
+    
+    update_option('ai_blogpost_is_scheduled', true);
+    
+    ai_blogpost_debug_log('Cron schedule updated:', [
+        'frequency' => $frequency,
+        'next_run' => wp_next_scheduled('ai_blogpost_cron_hook')
+    ]);
 }
-register_deactivation_hook(__FILE__,'ai_blogpost_deactivation');
+
+// Add function to handle frequency changes
+function ai_blogpost_handle_frequency_change() {
+    if (isset($_POST['option_page']) && $_POST['option_page'] === 'ai_blogpost_settings') {
+        $old_frequency = get_option('ai_blogpost_post_frequency', 'daily');
+        $new_frequency = isset($_POST['ai_blogpost_post_frequency']) ? 
+            sanitize_text_field($_POST['ai_blogpost_post_frequency']) : 'daily';
+        
+        if ($old_frequency !== $new_frequency) {
+            ai_blogpost_debug_log('Post frequency changed:', [
+                'old' => $old_frequency,
+                'new' => $new_frequency
+            ]);
+            
+            // Reschedule cron after settings are saved
+            add_action('updated_option_ai_blogpost_post_frequency', 'ai_blogpost_schedule_cron');
+        }
+    }
+}
+add_action('admin_init', 'ai_blogpost_handle_frequency_change');
+
+// Update deactivation function
+function ai_blogpost_deactivation() {
+    wp_clear_scheduled_hook('ai_blogpost_cron_hook');
+    delete_option('ai_blogpost_is_scheduled');
+    ai_blogpost_debug_log('Plugin deactivated, cron schedule cleared');
+}
 
 // Voeg deze functie toe om de cache te legen
 function clear_ai_blogpost_cache() {
@@ -1229,3 +1245,18 @@ function handle_refresh_models() {
     wp_send_json_success(['success' => $success]);
 }
 add_action('wp_ajax_refresh_openai_models', 'handle_refresh_models');
+
+// Helper function to check cron status
+function ai_blogpost_check_cron_status() {
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        $next_run = wp_next_scheduled('ai_blogpost_cron_hook');
+        $frequency = get_option('ai_blogpost_post_frequency', 'daily');
+        
+        error_log(sprintf(
+            'AI Blogpost Cron Status - Frequency: %s, Next Run: %s',
+            $frequency,
+            $next_run ? date('Y-m-d H:i:s', $next_run) : 'Not scheduled'
+        ));
+    }
+}
+add_action('admin_init', 'ai_blogpost_check_cron_status');
