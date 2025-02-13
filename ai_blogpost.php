@@ -930,22 +930,57 @@ function ai_blogpost_schedule_cron() {
 // Add function to handle frequency changes
 function ai_blogpost_handle_frequency_change() {
     if (isset($_POST['option_page']) && $_POST['option_page'] === 'ai_blogpost_settings') {
-        $old_frequency = get_option('ai_blogpost_post_frequency', 'daily');
-        $new_frequency = isset($_POST['ai_blogpost_post_frequency']) ? 
-            sanitize_text_field($_POST['ai_blogpost_post_frequency']) : 'daily';
-        
-        if ($old_frequency !== $new_frequency) {
-            ai_blogpost_debug_log('Post frequency changed:', [
-                'old' => $old_frequency,
-                'new' => $new_frequency
-            ]);
+        if (isset($_POST['ai_blogpost_post_frequency'])) {
+            $new_frequency = sanitize_text_field($_POST['ai_blogpost_post_frequency']);
+            $old_frequency = get_option('ai_blogpost_post_frequency', 'daily');
             
-            // Reschedule cron after settings are saved
-            add_action('updated_option_ai_blogpost_post_frequency', 'ai_blogpost_schedule_cron');
+            if ($old_frequency !== $new_frequency) {
+                // Update the frequency option
+                update_option('ai_blogpost_post_frequency', $new_frequency);
+                
+                // Clear existing schedule
+                wp_clear_scheduled_hook('ai_blogpost_cron_hook');
+                
+                // Set new schedule
+                $next_run = ($new_frequency === 'weekly') 
+                    ? strtotime('next monday 00:00:00') 
+                    : strtotime('tomorrow 00:00:00');
+                
+                // Add weekly schedule if needed
+                if ($new_frequency === 'weekly') {
+                    add_filter('cron_schedules', function($schedules) {
+                        $schedules['weekly'] = array(
+                            'interval' => 7 * 24 * 60 * 60,
+                            'display' => __('Once Weekly')
+                        );
+                        return $schedules;
+                    });
+                    wp_schedule_event($next_run, 'weekly', 'ai_blogpost_cron_hook');
+                } else {
+                    wp_schedule_event($next_run, 'daily', 'ai_blogpost_cron_hook');
+                }
+                
+                // Force page reload to show new schedule
+                add_action('admin_notices', function() {
+                    echo '<div class="notice notice-success is-dismissible">';
+                    echo '<p>Post frequency updated. Page will refresh to show new schedule.</p>';
+                    echo '</div>';
+                    echo '<script>setTimeout(function() { location.reload(); }, 1500);</script>';
+                });
+                
+                ai_blogpost_debug_log('Cron schedule updated:', [
+                    'old_frequency' => $old_frequency,
+                    'new_frequency' => $new_frequency,
+                    'next_run' => date('Y-m-d H:i:s', $next_run)
+                ]);
+            }
         }
     }
 }
-add_action('admin_init', 'ai_blogpost_handle_frequency_change');
+
+// Make sure this runs after settings are saved
+remove_action('admin_init', 'ai_blogpost_handle_frequency_change');
+add_action('admin_init', 'ai_blogpost_handle_frequency_change', 100);
 
 // Update deactivation function
 function ai_blogpost_deactivation() {
