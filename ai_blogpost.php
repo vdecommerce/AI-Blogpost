@@ -25,6 +25,9 @@ function ai_blogpost_initialize_settings() {
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_quality');
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_model');
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_prompt_template');
+
+    // Language setting
+    register_setting('ai_blogpost_settings', 'ai_blogpost_language');
 }
 add_action('admin_init', 'ai_blogpost_initialize_settings');
 
@@ -190,6 +193,27 @@ function ai_blogpost_admin_page() {
 function display_general_settings() {
     echo '<table class="form-table">';
     
+    // Language Selection
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_language">Content Language</label></th>';
+    echo '<td>';
+    echo '<select name="ai_blogpost_language" id="ai_blogpost_language">';
+    $language = get_cached_option('ai_blogpost_language', 'en');
+    $languages = array(
+        'en' => 'English',
+        'nl' => 'Nederlands',
+        'de' => 'Deutsch',
+        'fr' => 'Français',
+        'es' => 'Español'
+    );
+    foreach ($languages as $code => $name) {
+        echo '<option value="' . esc_attr($code) . '" ' . selected($language, $code, false) . '>' . esc_html($name) . '</option>';
+    }
+    echo '</select>';
+    echo '<p class="description">Select the language for generated content</p>';
+    echo '</td>';
+    echo '</tr>';
+
     // Post Frequency
     echo '<tr>';
     echo '<th><label for="ai_blogpost_post_frequency">Post Frequency</label></th>';
@@ -533,8 +557,12 @@ function prepare_ai_prompt($post_data) {
     try {
         ai_blogpost_debug_log('Preparing AI prompt with post data:', $post_data);
         
-        // Get prompt template from dashboard settings
-        $base_prompt = get_cached_option('ai_blogpost_prompt', 
+        // Direct get option without caching to ensure fresh value
+        $language = get_option('ai_blogpost_language', 'en');
+        ai_blogpost_debug_log('Selected language:', $language);
+        
+        // Get base prompt template
+        $base_prompt = get_option('ai_blogpost_prompt',
             "Write a blog post about [topic]. Structure the content as follows:
 
 ||Title||: Create an engaging, SEO-friendly title
@@ -548,15 +576,23 @@ function prepare_ai_prompt($post_data) {
 
 ||Category||: Suggest the most appropriate category for this post");
 
-        // Replace placeholders with actual category
-        $prompt = str_replace(
-            ['[topic]', '[category]', '[focus_keyword]'],
-            $post_data['category'],
-            $base_prompt
-        );
+        // Create system role with language instruction
+        $base_system_role = get_option('ai_blogpost_role', 'You are a professional blog writer.');
+        $language_instruction = get_language_instruction($language);
         
-        ai_blogpost_debug_log('Generated prompt:', $prompt);
-        return $prompt;
+        // Add language instruction at the beginning of messages array
+        $messages = [
+            ["role" => "system", "content" => $language_instruction],
+            ["role" => "system", "content" => $base_system_role],
+            ["role" => "user", "content" => str_replace(
+                ['[topic]', '[category]', '[focus_keyword]'],
+                $post_data['category'],
+                $base_prompt
+            )]
+        ];
+        
+        ai_blogpost_debug_log('Prepared messages:', $messages);
+        return $messages;
         
     } catch (Exception $e) {
         ai_blogpost_debug_log('Error in prepare_ai_prompt:', $e->getMessage());
@@ -564,11 +600,37 @@ function prepare_ai_prompt($post_data) {
     }
 }
 
-function prepare_dalle_prompt($correspondences) {
-    $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
-        'Create a professional blog header image about [category]. Style: Modern and professional with relevant symbolism.');
+// Helper function to get language instruction
+function get_language_instruction($language_code) {
+    $instructions = [
+        'en' => 'Write all content in English.',
+        'nl' => 'Schrijf alle content in het Nederlands.',
+        'de' => 'Schreiben Sie den gesamten Inhalt auf Deutsch.',
+        'fr' => 'Écrivez tout le contenu en français.',
+        'es' => 'Escribe todo el contenido en español.'
+    ];
     
-    // Replace all placeholders with [category]
+    return $instructions[$language_code] ?? $instructions['en'];
+}
+
+function prepare_dalle_prompt($correspondences) {
+    $language = get_cached_option('ai_blogpost_language', 'en');
+    $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
+        'Create a professional blog header image about [category]. Style: Modern en professioneel met relevante symboliek.');
+    
+    // Vertaal de prompt template
+    if ($language !== 'en') {
+        $translated_templates = [
+            'nl' => 'Maak een professionele blog header afbeelding over [category]. Stijl: Modern en professioneel met relevante symboliek.',
+            'de' => 'Erstellen Sie ein professionelles Blog-Header-Bild über [category]. Stil: Modern und professionell mit relevanter Symbolik.',
+            'fr' => 'Créez une image d\'en-tête de blog professionnelle sur [category]. Style : Moderne et professionnel avec un symbolisme pertinent.',
+            'es' => 'Crea una imagen de encabezado de blog profesional sobre [category]. Estilo: Moderno y profesional con simbolismo relevante.'
+        ];
+        
+        $template = $translated_templates[$language] ?? $template;
+    }
+    
+    // Replace placeholders
     $prompt = str_replace(
         ['[category]', '[categorie]', '[alle_categorieen]'],
         $correspondences['category'],
@@ -578,23 +640,20 @@ function prepare_dalle_prompt($correspondences) {
     return $prompt;
 }
 
-function send_ai_request($prompt) {
+function send_ai_request($messages) {
     try {
         $args = array(
             'body' => json_encode(array(
-                'model' => get_cached_option('ai_blogpost_model', 'gpt-4'),
-                'messages' => array(
-                    array("role" => "system", "content" => get_cached_option('ai_blogpost_role')),
-                    array("role" => "user", "content" => $prompt)
-                ),
-                'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
-                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096)
+                'model' => get_option('ai_blogpost_model', 'gpt-4'),
+                'messages' => $messages,
+                'temperature' => (float)get_option('ai_blogpost_temperature', 0.7),
+                'max_tokens' => min((int)get_option('ai_blogpost_max_tokens', 2048), 4096)
             )),
             'headers' => array(
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . get_cached_option('ai_blogpost_api_key')
+                'Authorization' => 'Bearer ' . get_option('ai_blogpost_api_key')
             ),
-            'timeout' => 90 // Increased timeout
+            'timeout' => 90
         );
 
         ai_blogpost_debug_log('Sending API request');
@@ -879,15 +938,35 @@ function ai_blogpost_deactivation(){
 }
 register_deactivation_hook(__FILE__,'ai_blogpost_deactivation');
 
+// Voeg deze functie toe om de cache te legen
+function clear_ai_blogpost_cache() {
+    global $ai_blogpost_option_cache;
+    $ai_blogpost_option_cache = array(); // Reset de cache
+}
+
+// Wijzig de get_cached_option functie om een globale cache te gebruiken
 function get_cached_option($option_name, $default = '') {
-    static $cache = array();
+    global $ai_blogpost_option_cache;
     
-    if (!isset($cache[$option_name])) {
-        $cache[$option_name] = get_option($option_name, $default);
+    if (!isset($ai_blogpost_option_cache)) {
+        $ai_blogpost_option_cache = array();
     }
     
-    return $cache[$option_name];
+    if (!isset($ai_blogpost_option_cache[$option_name])) {
+        $ai_blogpost_option_cache[$option_name] = get_option($option_name, $default);
+    }
+    
+    return $ai_blogpost_option_cache[$option_name];
 }
+
+// Voeg een action toe om de cache te legen na het opslaan van instellingen
+function ai_blogpost_after_save_settings() {
+    if (isset($_POST['option_page']) && $_POST['option_page'] === 'ai_blogpost_settings') {
+        clear_ai_blogpost_cache();
+        ai_blogpost_debug_log('Cache cleared after saving settings');
+    }
+}
+add_action('admin_init', 'ai_blogpost_after_save_settings', 99);
 
 // Add logging function
 function ai_blogpost_log_api_call($type, $success, $data) {
