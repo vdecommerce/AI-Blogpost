@@ -28,6 +28,12 @@ function ai_blogpost_initialize_settings() {
 
     // Language setting
     register_setting('ai_blogpost_settings', 'ai_blogpost_language');
+
+    // LM Studio settings
+    register_setting('ai_blogpost_settings', 'ai_blogpost_lm_enabled');
+    register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_url');
+    register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_key');
+    register_setting('ai_blogpost_settings', 'ai_blogpost_lm_model');
 }
 add_action('admin_init', 'ai_blogpost_initialize_settings');
 
@@ -334,6 +340,41 @@ function display_text_settings() {
     
     add_refresh_models_button(); // Add the refresh models button here
     
+    // LM Studio Section
+    echo '<tr>';
+    echo '<th colspan="2"><h3>LM Studio Integration</h3></th>';
+    echo '</tr>';
+    
+    // Enable LM Studio
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_lm_enabled">Enable LM Studio</label></th>';
+    echo '<td>';
+    echo '<input type="checkbox" name="ai_blogpost_lm_enabled" id="ai_blogpost_lm_enabled" value="1" ' . 
+         checked(get_cached_option('ai_blogpost_lm_enabled', 0), 1, false) . '>';
+    echo '<p class="description">Enable local LM Studio integration for text generation</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // LM Studio API URL
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_lm_api_url">LM Studio API URL</label></th>';
+    echo '<td>';
+    echo '<input type="url" name="ai_blogpost_lm_api_url" id="ai_blogpost_lm_api_url" class="regular-text" value="' . 
+         esc_attr(get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234/v1')) . '">';
+    echo '<p class="description">Usually http://localhost:1234/v1</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // LM Studio API Key
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_lm_api_key">LM Studio API Key</label></th>';
+    echo '<td>';
+    echo '<input type="password" name="ai_blogpost_lm_api_key" id="ai_blogpost_lm_api_key" class="regular-text" value="' . 
+         esc_attr(get_cached_option('ai_blogpost_lm_api_key')) . '">';
+    echo '<button type="button" class="button validate-api-key" data-provider="lm">Test Connection</button>';
+    echo '</td>';
+    echo '</tr>';
+
     echo '</table>';
 }
 
@@ -642,6 +683,11 @@ function prepare_dalle_prompt($correspondences) {
 
 function send_ai_request($messages) {
     try {
+        // Check if LM Studio is enabled and should be used
+        if (get_cached_option('ai_blogpost_lm_enabled', 0)) {
+            return send_lm_studio_request($messages);
+        }
+
         $args = array(
             'body' => json_encode(array(
                 'model' => get_option('ai_blogpost_model', 'gpt-4'),
@@ -673,6 +719,49 @@ function send_ai_request($messages) {
         return $result;
     } catch (Exception $e) {
         ai_blogpost_debug_log('Error in send_ai_request:', $e->getMessage());
+        throw $e;
+    }
+}
+
+function send_lm_studio_request($messages) {
+    try {
+        $api_url = get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234/v1');
+        $api_key = get_cached_option('ai_blogpost_lm_api_key');
+
+        if (empty($api_url) || empty($api_key)) {
+            throw new Exception('LM Studio API URL or key missing');
+        }
+
+        $args = array(
+            'body' => json_encode(array(
+                'messages' => $messages,
+                'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
+                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096)
+            )),
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . $api_key
+            ),
+            'timeout' => 90
+        );
+
+        ai_blogpost_debug_log('Sending LM Studio request');
+        $response = wp_remote_post($api_url . '/chat/completions', $args);
+        
+        if (is_wp_error($response)) {
+            throw new Exception('LM Studio API request failed: ' . $response->get_error_message());
+        }
+        
+        $result = json_decode(wp_remote_retrieve_body($response), true);
+        ai_blogpost_debug_log('LM Studio response received:', $result);
+        
+        if (!isset($result['choices'][0]['message']['content'])) {
+            throw new Exception('Invalid LM Studio response format');
+        }
+        
+        return $result;
+    } catch (Exception $e) {
+        ai_blogpost_debug_log('Error in send_lm_studio_request:', $e->getMessage());
         throw $e;
     }
 }
@@ -1295,3 +1384,33 @@ function ai_blogpost_check_cron_status() {
     }
 }
 add_action('admin_init', 'ai_blogpost_check_cron_status');
+
+function handle_lm_studio_test() {
+    check_ajax_referer('ai_blogpost_nonce', 'nonce');
+    
+    $api_url = sanitize_text_field($_POST['api_url']);
+    $api_key = sanitize_text_field($_POST['api_key']);
+    
+    try {
+        $response = wp_remote_get($api_url . '/models', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $api_key
+            ],
+            'timeout' => 30
+        ]);
+
+        if (is_wp_error($response)) {
+            wp_send_json_error('Connection failed: ' . $response->get_error_message());
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (empty($body['data'])) {
+            wp_send_json_error('Invalid response from LM Studio');
+        }
+
+        wp_send_json_success('Connection successful');
+    } catch (Exception $e) {
+        wp_send_json_error('Error: ' . $e->getMessage());
+    }
+}
+add_action('wp_ajax_test_lm_studio', 'handle_lm_studio_test');
