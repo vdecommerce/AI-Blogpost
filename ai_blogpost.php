@@ -716,84 +716,58 @@ function send_ai_request($messages) {
 
 function send_lm_studio_request($messages) {
     try {
-        $api_url = get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234/v1');
+        $api_url = rtrim(get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234'), '/') . '/v1';
 
-        if (empty($api_url)) {
-            throw new Exception('LM Studio API URL missing');
-        }
-
-        // Verzamel systeem- en gebruikersinstructies
-        $system_content = '';
-        $user_content = '';
+        // Prepare prompt from messages
+        $prompt = '';
         foreach ($messages as $message) {
             if ($message['role'] === 'system') {
-                $system_content .= $message['content'] . "\n";
+                $prompt .= "### System:\n" . $message['content'] . "\n\n";
             } else if ($message['role'] === 'user') {
-                $user_content .= $message['content'] . "\n";
+                $prompt .= "### User:\n" . $message['content'] . "\n\n";
             }
         }
-
-        // Maak een duidelijke prompt
-        $prompt = "### System Instructions:\n";
-        $prompt .= "You are a professional blog writer.\n";
-        $prompt .= "Write a complete blog post with the following requirements:\n";
-        $prompt .= "1. Include a clear title\n";
-        $prompt .= "2. Write professional content\n";
-        $prompt .= "3. Use proper HTML structure\n";
-        $prompt .= "4. Follow SEO best practices\n\n";
-        
-        // Voeg systeem instructies toe
-        $prompt .= "Additional requirements:\n";
-        $prompt .= $system_content . "\n";
-        
-        // Specificeer het format
-        $prompt .= "### Output Format:\n";
-        $prompt .= "**Title**: [Write an engaging title]\n\n";
-        $prompt .= "<article>\n[Write the main content here using h1, h2, and p tags]\n</article>\n\n";
-        $prompt .= "**Category**: [Specify the category]\n\n";
-        
-        // Voeg gebruikers instructie toe
-        $prompt .= "### Topic:\n";
-        $prompt .= $user_content . "\n";
-        
-        // Vraag om directe response
-        $prompt .= "### Response:\n";
+        $prompt .= "### Assistant:\n";
 
         $args = array(
             'body' => json_encode(array(
-                'model' => 'unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF',
+                'model' => get_cached_option('ai_blogpost_lm_model', 'model.gguf'),
                 'prompt' => $prompt,
                 'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
                 'max_tokens' => 2048,
-                'stream' => false,
-                'stop' => ["### System Instructions:", "### Output Format:", "### Topic:", "### Response:"]
+                'stream' => false
             )),
             'headers' => array(
                 'Content-Type' => 'application/json'
             ),
-            'timeout' => 300
+            'timeout' => 300,
+            'sslverify' => false
         );
-
-        ai_blogpost_debug_log('Sending LM Studio request', [
-            'url' => $api_url . '/completions',
-            'prompt' => $prompt
-        ]);
 
         $response = wp_remote_post($api_url . '/completions', $args);
         
         if (is_wp_error($response)) {
             throw new Exception('LM Studio API request failed: ' . $response->get_error_message());
         }
-        
+
         $result = json_decode(wp_remote_retrieve_body($response), true);
         
-        // Zorg ervoor dat de artikel tags compleet zijn
-        $content = $result['choices'][0]['text'];
-        if (strpos($content, '</article>') === false) {
-            $content .= "</article>";
+        if (!isset($result['choices'][0]['text'])) {
+            throw new Exception('Invalid response format from LM Studio');
         }
 
-        // Format de response om overeen te komen met OpenAI formaat
+        // Extract actual content from response
+        $content = $result['choices'][0]['text'];
+        
+        // Remove thinking process if present
+        if (strpos($content, '</think>') !== false) {
+            $content = substr($content, strpos($content, '</think>') + 8);
+        }
+
+        // Clean up the response
+        $content = trim(str_replace(['### Assistant:', '---'], '', $content));
+
+        // Format response to match OpenAI format
         return array(
             'choices' => array(
                 array(
@@ -1435,31 +1409,135 @@ add_action('admin_init', 'ai_blogpost_check_cron_status');
 function handle_lm_studio_test() {
     check_ajax_referer('ai_blogpost_nonce', 'nonce');
     
-    $api_url = sanitize_text_field($_POST['api_url']);
+    $api_url = sanitize_text_field($_POST['url']);
+    // Ensure URL ends with /v1
+    $api_url = rtrim($api_url, '/') . '/v1';
     
     try {
+        ai_blogpost_debug_log('Testing LM Studio connection:', [
+            'url' => $api_url
+        ]);
+
+        // Test basic connection to models endpoint
         $response = wp_remote_get($api_url . '/models', [
             'headers' => [
                 'Content-Type' => 'application/json'
             ],
-            'timeout' => 30
+            'timeout' => 30,
+            'sslverify' => false
         ]);
 
         if (is_wp_error($response)) {
+            ai_blogpost_debug_log('LM Studio connection failed:', $response->get_error_message());
             wp_send_json_error('Connection failed: ' . $response->get_error_message());
+            return;
         }
 
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        if (empty($body['data'])) {
-            wp_send_json_error('Invalid response from LM Studio');
+        $body = wp_remote_retrieve_body($response);
+        ai_blogpost_debug_log('LM Studio raw response:', $body);
+
+        $data = json_decode($body, true);
+        
+        // LM Studio responses can be in different formats
+        $models = [];
+        if (!empty($data['data'])) {
+            $models = $data['data'];
+        } elseif (is_array($data)) {
+            $models = array_map(function($model) {
+                return is_array($model) ? $model : ['id' => $model];
+            }, $data);
         }
+
+        if (empty($models)) {
+            ai_blogpost_debug_log('No models found in LM Studio response:', $data);
+            wp_send_json_error('No models found in LM Studio');
+            return;
+        }
+
+        // Store the models in WordPress options
+        update_option('ai_blogpost_available_lm_models', $models);
+        update_option('ai_blogpost_lm_api_url', rtrim($api_url, '/v1')); // Store base URL
+        
+        ai_blogpost_log_api_call('LM Studio Test', true, [
+            'url' => $api_url,
+            'status' => 'Connection successful',
+            'models_found' => count($models),
+            'models' => array_map(function($model) {
+                return isset($model['id']) ? $model['id'] : $model;
+            }, $models)
+        ]);
 
         wp_send_json_success([
             'message' => 'Connection successful',
-            'models' => $body['data']
+            'models' => $models
         ]);
+
     } catch (Exception $e) {
+        ai_blogpost_debug_log('LM Studio error:', $e->getMessage());
         wp_send_json_error('Error: ' . $e->getMessage());
     }
 }
 add_action('wp_ajax_test_lm_studio', 'handle_lm_studio_test');
+
+// Update display function to show LM Studio settings
+function display_lm_studio_settings() {
+    ?>
+    <tr>
+        <th><label for="ai_blogpost_lm_api_url">LM Studio API URL</label></th>
+        <td>
+            <input type="url" name="ai_blogpost_lm_api_url" id="ai_blogpost_lm_api_url" 
+                   class="regular-text" value="<?php echo esc_attr(get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234')); ?>">
+            <button type="button" class="button test-lm-connection">Test Connection</button>
+            <span class="spinner" style="float:none;margin-left:4px;"></span>
+            <p class="description">Usually http://localhost:1234 (without /v1)</p>
+            <div id="lm-studio-status"></div>
+            <div id="lm-studio-models"></div>
+        </td>
+    </tr>
+
+    <script>
+    jQuery(document).ready(function($) {
+        $('.test-lm-connection').click(function() {
+            var $button = $(this);
+            var $spinner = $button.next('.spinner');
+            var $status = $('#lm-studio-status');
+            var $models = $('#lm-studio-models');
+            var url = $('#ai_blogpost_lm_api_url').val();
+            
+            $button.prop('disabled', true);
+            $spinner.addClass('is-active');
+            $status.html('');
+            $models.html('');
+            
+            $.post(ajaxurl, {
+                action: 'test_lm_studio',
+                url: url,
+                nonce: '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>'
+            })
+            .done(function(response) {
+                if (response.success) {
+                    $status.html('<div class="notice notice-success inline"><p>' + response.data.message + '</p></div>');
+                    if (response.data.models && response.data.models.length > 0) {
+                        var modelList = '<div class="notice notice-info inline"><p><strong>Available Models:</strong></p><ul>';
+                        response.data.models.forEach(function(model) {
+                            modelList += '<li>' + (model.id || model) + '</li>';
+                        });
+                        modelList += '</ul></div>';
+                        $models.html(modelList);
+                    }
+                } else {
+                    $status.html('<div class="notice notice-error inline"><p>' + response.data + '</p></div>');
+                }
+            })
+            .fail(function() {
+                $status.html('<div class="notice notice-error inline"><p>Network error while testing connection</p></div>');
+            })
+            .always(function() {
+                $button.prop('disabled', false);
+                $spinner.removeClass('is-active');
+            });
+        });
+    });
+    </script>
+    <?php
+}
