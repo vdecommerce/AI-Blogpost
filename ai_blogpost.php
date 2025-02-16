@@ -969,35 +969,40 @@ function create_ai_blogpost() {
 function parse_ai_content($ai_content) {
     ai_blogpost_debug_log('Raw AI Content:', $ai_content);
 
-    // Eerst eventuele denk-proces content verwijderen
+    // Verwijder thinking process
     if (strpos($ai_content, '</think>') !== false) {
         $ai_content = substr($ai_content, strpos($ai_content, '</think>') + 8);
     }
 
-    // Content tussen '**SEO Blog Post**' en laatste '</response>' pakken
-    if (preg_match('/\*\*SEO Blog Post\*\*.*?<\/response>/s', $ai_content, $matches)) {
-        $ai_content = $matches[0];
-    }
-
-    // Parse de onderdelen
+    // Initialize variables
     $title = '';
     $content = '';
     $category = '';
 
-    // Title extractie
-    if (preg_match('/\*\*Title\*\*:\s*(.*?)(?=\n|$)/s', $ai_content, $matches)) {
-        $title = trim($matches[1]);
-    }
-
-    // Content extractie
+    // Extract article content
     if (preg_match('/<article>(.*?)<\/article>/s', $ai_content, $matches)) {
         $content = trim($matches[1]);
+        
+        // Extract title from first bold text or h1/h2
+        if (preg_match('/\*\*(.*?)\*\*/', $content, $title_matches) || 
+            preg_match('/<h[12][^>]*>(.*?)<\/h[12]>/s', $content, $title_matches)) {
+            $title = trim(strip_tags($title_matches[1]));
+        }
     }
 
-    // Category extractie
-    if (preg_match('/\*\*Category\*\*:\s*(.*?)(?=\n|$)/s', $ai_content, $matches)) {
-        $category = trim($matches[1]);
-    }
+    // Clean up the content
+    $content = preg_replace('/\*\*(.*?)\*\*/', '<strong>$1</strong>', $content); // Convert markdown bold to HTML
+    $content = preg_replace('/\*(.*?)\*/', '<em>$1</em>', $content); // Convert markdown italic to HTML
+    $content = preg_replace('/#{3,}\s+(.+)/', '<h3>$1</h3>', $content); // Convert markdown headers to H3
+    $content = preg_replace('/#{2}\s+(.+)/', '<h2>$1</h2>', $content); // Convert markdown headers to H2
+    $content = preg_replace('/#{1}\s+(.+)/', '<h1>$1</h1>', $content); // Convert markdown headers to H1
+    
+    // Convert markdown lists to HTML
+    $content = preg_replace('/^\s*[-\*]\s+(.+)$/m', '<li>$1</li>', $content);
+    $content = preg_replace('/(<li>.*?<\/li>)/s', '<ul>$1</ul>', $content);
+
+    // Add paragraph tags to text blocks
+    $content = wpautop($content);
 
     $parsed = array(
         'title' => $title ?: 'AI-Generated Post',
