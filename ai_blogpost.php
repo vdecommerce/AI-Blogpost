@@ -587,41 +587,46 @@ function fetch_ai_response($post_data) {
 
 function prepare_ai_prompt($post_data) {
     try {
-        ai_blogpost_debug_log('Preparing AI prompt with post data:', $post_data);
-        
-        // Direct get option without caching to ensure fresh value
         $language = get_option('ai_blogpost_language', 'en');
-        ai_blogpost_debug_log('Selected language:', $language);
         
-        // Get base prompt template
-        $base_prompt = get_option('ai_blogpost_prompt',
-            "Write a blog post about [topic]. Structure the content as follows:
-
-||Title||: Create an engaging, SEO-friendly title
-
-||Content||: Write the main content here, using proper HTML structure:
-- Use <article> tags to wrap the content
-- Use <h1>, <h2> for headings
-- Use <p> for paragraphs
-- Include relevant subheadings
-- Add a strong conclusion
-
-||Category||: Suggest the most appropriate category for this post");
-
-        // Create system role with language instruction
-        $base_system_role = get_option('ai_blogpost_role', 'You are a professional blog writer.');
-        $language_instruction = get_language_instruction($language);
-        
-        // Add language instruction at the beginning of messages array
-        $messages = [
-            ["role" => "system", "content" => $language_instruction],
-            ["role" => "system", "content" => $base_system_role],
-            ["role" => "user", "content" => str_replace(
-                ['[topic]', '[category]', '[focus_keyword]'],
-                $post_data['category'],
-                $base_prompt
-            )]
+        // Create a clearer system role
+        $system_messages = [
+            [
+                "role" => "system",
+                "content" => get_language_instruction($language)
+            ],
+            [
+                "role" => "system",
+                "content" => "You are a professional blog writer specializing in SEO-optimized content. 
+                Follow this structure exactly:
+                1. Start with ||Title||: followed by an SEO-optimized title
+                2. Then ||Content||: followed by the main content in <article> tags
+                3. End with ||Category||: followed by the most relevant category"
+            ]
         ];
+
+        // Create a more specific user prompt
+        $user_prompt = "Create a professional blog post about [topic]. 
+        
+Requirements:
+- Start with ||Title||: followed by an SEO-optimized title
+- Then ||Content||: containing your article wrapped in <article> tags
+- Use proper HTML structure with <h1>, <h2>, and <p> tags
+- Write engaging, informative content
+- End with ||Category||: [topic]
+
+The content should be well-structured, informative, and SEO-friendly.";
+
+        // Combine messages
+        $messages = array_merge(
+            $system_messages,
+            [
+                [
+                    "role" => "user",
+                    "content" => str_replace('[topic]', $post_data['category'], $user_prompt)
+                ]
+            ]
+        );
         
         ai_blogpost_debug_log('Prepared messages:', $messages);
         return $messages;
@@ -969,7 +974,7 @@ function create_ai_blogpost() {
 function parse_ai_content($ai_content) {
     ai_blogpost_debug_log('Raw AI Content:', $ai_content);
 
-    // Verwijder thinking process
+    // Remove thinking process if present
     if (strpos($ai_content, '</think>') !== false) {
         $ai_content = substr($ai_content, strpos($ai_content, '</think>') + 8);
     }
@@ -979,29 +984,35 @@ function parse_ai_content($ai_content) {
     $content = '';
     $category = '';
 
-    // Extract article content
+    // Extract title
+    if (preg_match('/\|\|Title\|\|:\s*(.+?)(?=\|\|Content\|\||\s*$)/s', $ai_content, $matches)) {
+        $title = trim($matches[1]);
+    }
+
+    // Extract content
     if (preg_match('/<article>(.*?)<\/article>/s', $ai_content, $matches)) {
         $content = trim($matches[1]);
-        
-        // Extract title from first bold text or h1/h2
-        if (preg_match('/\*\*(.*?)\*\*/', $content, $title_matches) || 
-            preg_match('/<h[12][^>]*>(.*?)<\/h[12]>/s', $content, $title_matches)) {
-            $title = trim(strip_tags($title_matches[1]));
-        }
+    } elseif (preg_match('/\|\|Content\|\|:\s*(.+?)(?=\|\|Category\|\||\s*$)/s', $ai_content, $matches)) {
+        $content = trim($matches[1]);
+    }
+
+    // Extract category
+    if (preg_match('/\|\|Category\|\|:\s*(.+?)$/s', $ai_content, $matches)) {
+        $category = trim($matches[1]);
     }
 
     // Clean up the content
-    $content = preg_replace('/\*\*(.*?)\*\*/', '<strong>$1</strong>', $content); // Convert markdown bold to HTML
-    $content = preg_replace('/\*(.*?)\*/', '<em>$1</em>', $content); // Convert markdown italic to HTML
-    $content = preg_replace('/#{3,}\s+(.+)/', '<h3>$1</h3>', $content); // Convert markdown headers to H3
-    $content = preg_replace('/#{2}\s+(.+)/', '<h2>$1</h2>', $content); // Convert markdown headers to H2
-    $content = preg_replace('/#{1}\s+(.+)/', '<h1>$1</h1>', $content); // Convert markdown headers to H1
+    $content = preg_replace('/\*\*(.*?)\*\*/', '<strong>$1</strong>', $content);
+    $content = preg_replace('/\*(.*?)\*/', '<em>$1</em>', $content);
+    $content = preg_replace('/#{3,}\s+(.+)/', '<h3>$1</h3>', $content);
+    $content = preg_replace('/#{2}\s+(.+)/', '<h2>$1</h2>', $content);
+    $content = preg_replace('/#{1}\s+(.+)/', '<h1>$1</h1>', $content);
     
     // Convert markdown lists to HTML
     $content = preg_replace('/^\s*[-\*]\s+(.+)$/m', '<li>$1</li>', $content);
     $content = preg_replace('/(<li>.*?<\/li>)/s', '<ul>$1</ul>', $content);
 
-    // Add paragraph tags to text blocks
+    // Add paragraph tags
     $content = wpautop($content);
 
     $parsed = array(
