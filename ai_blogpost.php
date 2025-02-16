@@ -361,17 +361,8 @@ function display_text_settings() {
     echo '<td>';
     echo '<input type="url" name="ai_blogpost_lm_api_url" id="ai_blogpost_lm_api_url" class="regular-text" value="' . 
          esc_attr(get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234/v1')) . '">';
+    echo '<button type="button" class="button test-lm-connection">Test Connection</button>';
     echo '<p class="description">Usually http://localhost:1234/v1</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // LM Studio API Key
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_lm_api_key">LM Studio API Key</label></th>';
-    echo '<td>';
-    echo '<input type="password" name="ai_blogpost_lm_api_key" id="ai_blogpost_lm_api_key" class="regular-text" value="' . 
-         esc_attr(get_cached_option('ai_blogpost_lm_api_key')) . '">';
-    echo '<button type="button" class="button validate-api-key" data-provider="lm">Test Connection</button>';
     echo '</td>';
     echo '</tr>';
 
@@ -726,40 +717,93 @@ function send_ai_request($messages) {
 function send_lm_studio_request($messages) {
     try {
         $api_url = get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234/v1');
-        $api_key = get_cached_option('ai_blogpost_lm_api_key');
 
-        if (empty($api_url) || empty($api_key)) {
-            throw new Exception('LM Studio API URL or key missing');
+        if (empty($api_url)) {
+            throw new Exception('LM Studio API URL missing');
         }
+
+        // Verzamel systeem- en gebruikersinstructies
+        $system_content = '';
+        $user_content = '';
+        foreach ($messages as $message) {
+            if ($message['role'] === 'system') {
+                $system_content .= $message['content'] . "\n";
+            } else if ($message['role'] === 'user') {
+                $user_content .= $message['content'] . "\n";
+            }
+        }
+
+        // Maak een duidelijke prompt
+        $prompt = "### System Instructions:\n";
+        $prompt .= "You are a professional blog writer.\n";
+        $prompt .= "Write a complete blog post with the following requirements:\n";
+        $prompt .= "1. Include a clear title\n";
+        $prompt .= "2. Write professional content\n";
+        $prompt .= "3. Use proper HTML structure\n";
+        $prompt .= "4. Follow SEO best practices\n\n";
+        
+        // Voeg systeem instructies toe
+        $prompt .= "Additional requirements:\n";
+        $prompt .= $system_content . "\n";
+        
+        // Specificeer het format
+        $prompt .= "### Output Format:\n";
+        $prompt .= "**Title**: [Write an engaging title]\n\n";
+        $prompt .= "<article>\n[Write the main content here using h1, h2, and p tags]\n</article>\n\n";
+        $prompt .= "**Category**: [Specify the category]\n\n";
+        
+        // Voeg gebruikers instructie toe
+        $prompt .= "### Topic:\n";
+        $prompt .= $user_content . "\n";
+        
+        // Vraag om directe response
+        $prompt .= "### Response:\n";
 
         $args = array(
             'body' => json_encode(array(
-                'messages' => $messages,
+                'model' => 'unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF',
+                'prompt' => $prompt,
                 'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
-                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096)
+                'max_tokens' => 2048,
+                'stream' => false,
+                'stop' => ["### System Instructions:", "### Output Format:", "### Topic:", "### Response:"]
             )),
             'headers' => array(
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . $api_key
+                'Content-Type' => 'application/json'
             ),
-            'timeout' => 90
+            'timeout' => 300
         );
 
-        ai_blogpost_debug_log('Sending LM Studio request');
-        $response = wp_remote_post($api_url . '/chat/completions', $args);
+        ai_blogpost_debug_log('Sending LM Studio request', [
+            'url' => $api_url . '/completions',
+            'prompt' => $prompt
+        ]);
+
+        $response = wp_remote_post($api_url . '/completions', $args);
         
         if (is_wp_error($response)) {
             throw new Exception('LM Studio API request failed: ' . $response->get_error_message());
         }
         
         $result = json_decode(wp_remote_retrieve_body($response), true);
-        ai_blogpost_debug_log('LM Studio response received:', $result);
         
-        if (!isset($result['choices'][0]['message']['content'])) {
-            throw new Exception('Invalid LM Studio response format');
+        // Zorg ervoor dat de artikel tags compleet zijn
+        $content = $result['choices'][0]['text'];
+        if (strpos($content, '</article>') === false) {
+            $content .= "</article>";
         }
-        
-        return $result;
+
+        // Format de response om overeen te komen met OpenAI formaat
+        return array(
+            'choices' => array(
+                array(
+                    'message' => array(
+                        'content' => $content
+                    )
+                )
+            )
+        );
+
     } catch (Exception $e) {
         ai_blogpost_debug_log('Error in send_lm_studio_request:', $e->getMessage());
         throw $e;
@@ -949,42 +993,45 @@ function create_ai_blogpost() {
 }
 
 function parse_ai_content($ai_content) {
-    // Debug log the raw content
     ai_blogpost_debug_log('Raw AI Content:', $ai_content);
 
-    $patterns = array(
-        'title' => '/\|\|Title\|\|:\s*(.*?)(?=\|\|Content\|\|:)/s',
-        'content' => '/\|\|Content\|\|:\s*(.*?)(?=\|\|Category\|\|:)/s',
-        'category' => '/\|\|Category\|\|:\s*(.*?)$/s'
+    // Eerst eventuele denk-proces content verwijderen
+    if (strpos($ai_content, '</think>') !== false) {
+        $ai_content = substr($ai_content, strpos($ai_content, '</think>') + 8);
+    }
+
+    // Content tussen '**SEO Blog Post**' en laatste '</response>' pakken
+    if (preg_match('/\*\*SEO Blog Post\*\*.*?<\/response>/s', $ai_content, $matches)) {
+        $ai_content = $matches[0];
+    }
+
+    // Parse de onderdelen
+    $title = '';
+    $content = '';
+    $category = '';
+
+    // Title extractie
+    if (preg_match('/\*\*Title\*\*:\s*(.*?)(?=\n|$)/s', $ai_content, $matches)) {
+        $title = trim($matches[1]);
+    }
+
+    // Content extractie
+    if (preg_match('/<article>(.*?)<\/article>/s', $ai_content, $matches)) {
+        $content = trim($matches[1]);
+    }
+
+    // Category extractie
+    if (preg_match('/\*\*Category\*\*:\s*(.*?)(?=\n|$)/s', $ai_content, $matches)) {
+        $category = trim($matches[1]);
+    }
+
+    $parsed = array(
+        'title' => $title ?: 'AI-Generated Post',
+        'content' => $content ? "<article>$content</article>" : '<article><p>Content generation failed</p></article>',
+        'category' => $category ?: 'Uncategorized'
     );
 
-    $parsed = array();
-    foreach ($patterns as $key => $pattern) {
-        if (preg_match($pattern, $ai_content, $matches)) {
-            $parsed[$key] = trim($matches[1]);
-            ai_blogpost_debug_log("Parsed {$key}:", $parsed[$key]);
-        } else {
-            ai_blogpost_debug_log("Failed to parse {$key} from AI response");
-            // Set default values if parsing fails
-            switch ($key) {
-                case 'title':
-                    $parsed[$key] = 'AI-Generated Post';
-                    break;
-                case 'content':
-                    $parsed[$key] = '<article><p>Content generation failed</p></article>';
-                    break;
-                case 'category':
-                    $parsed[$key] = 'Uncategorized';
-                    break;
-            }
-        }
-    }
-
-    // Ensure content is wrapped in article tags
-    if (!empty($parsed['content']) && !preg_match('/<article>.*<\/article>/s', $parsed['content'])) {
-        $parsed['content'] = '<article>' . $parsed['content'] . '</article>';
-    }
-
+    ai_blogpost_debug_log('Parsed Content:', $parsed);
     return $parsed;
 }
 
@@ -1389,12 +1436,11 @@ function handle_lm_studio_test() {
     check_ajax_referer('ai_blogpost_nonce', 'nonce');
     
     $api_url = sanitize_text_field($_POST['api_url']);
-    $api_key = sanitize_text_field($_POST['api_key']);
     
     try {
         $response = wp_remote_get($api_url . '/models', [
             'headers' => [
-                'Authorization' => 'Bearer ' . $api_key
+                'Content-Type' => 'application/json'
             ],
             'timeout' => 30
         ]);
@@ -1408,7 +1454,10 @@ function handle_lm_studio_test() {
             wp_send_json_error('Invalid response from LM Studio');
         }
 
-        wp_send_json_success('Connection successful');
+        wp_send_json_success([
+            'message' => 'Connection successful',
+            'models' => $body['data']
+        ]);
     } catch (Exception $e) {
         wp_send_json_error('Error: ' . $e->getMessage());
     }
