@@ -498,8 +498,14 @@ function display_image_settings() {
     echo '<tr>';
     echo '<th><label for="ai_blogpost_comfyui_api_url">ComfyUI API URL</label></th>';
     echo '<td>';
+    $comfyui_url = get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188');
+    // Ensure URL is properly formatted
+    $comfyui_url = rtrim($comfyui_url, '/');
+    if (!preg_match('/^https?:\/\//', $comfyui_url)) {
+        $comfyui_url = 'http://' . $comfyui_url;
+    }
     echo '<input type="url" name="ai_blogpost_comfyui_api_url" id="ai_blogpost_comfyui_api_url" class="regular-text" value="' . 
-         esc_attr(get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188')) . '">';
+         esc_attr($comfyui_url) . '">';
     echo '<button type="button" class="button test-comfyui-connection">Test Connection</button>';
     echo '<span class="spinner" style="float: none; margin-left: 4px;"></span>';
     echo '<p class="description">Usually http://localhost:8188</p>';

@@ -411,7 +411,12 @@ function fetch_comfyui_image_from_text($image_data) {
         }
 
         $category = $image_data['category'];
-        $api_url = rtrim(get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188'), '/');
+    $api_url = get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188');
+    // Ensure URL is properly formatted
+    $api_url = rtrim($api_url, '/');
+    if (!preg_match('/^https?:\/\//', $api_url)) {
+        $api_url = 'http://' . $api_url;
+    }
         $client_id = get_cached_option('ai_blogpost_comfyui_client_id');
         
         if (empty($client_id)) {
