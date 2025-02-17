@@ -1,0 +1,24 @@
+.nav-tab-wrapper {
+    margin-bottom: 20px;
+}
+
+.tab-content {
+    background: #fff;
+    padding: 20px;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+
+.postbox {
+    margin-top: 20px;
+    padding: 15px;
+}
+
+.form-table td {
+    vertical-align: top;
+}
+
+.description {
+    margin-top: 5px;
+    color: #666;
+}
