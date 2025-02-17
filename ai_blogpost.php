@@ -589,7 +589,7 @@ function prepare_ai_prompt($post_data) {
     try {
         $language = get_option('ai_blogpost_language', 'en');
         
-        // Create a clearer system role
+        // System messages for better structure
         $system_messages = [
             [
                 "role" => "system",
@@ -597,25 +597,43 @@ function prepare_ai_prompt($post_data) {
             ],
             [
                 "role" => "system",
-                "content" => "You are a professional blog writer specializing in SEO-optimized content. 
-                Follow this structure exactly:
-                1. Start with ||Title||: followed by an SEO-optimized title
-                2. Then ||Content||: followed by the main content in <article> tags
-                3. End with ||Category||: followed by the most relevant category"
+                "content" => "You are a professional SEO content writer. 
+                Structure your response exactly as follows:
+
+                ||Title||: Write an SEO-optimized title here
+
+                ||Content||: 
+                <article>
+                    <h1>Main title (same as above)</h1>
+                    <p>Introduction paragraph</p>
+
+                    <h2>First Section</h2>
+                    <p>Content for first section</p>
+
+                    <h2>Second Section</h2>
+                    <p>Content for second section</p>
+
+                    <!-- Add more sections as needed -->
+
+                    <h2>Conclusion</h2>
+                    <p>Concluding thoughts</p>
+                </article>
+
+                ||Category||: Category name"
             ]
         ];
 
-        // Create a more specific user prompt
-        $user_prompt = "Create a professional blog post about [topic]. 
-        
-Requirements:
-- Start with ||Title||: followed by an SEO-optimized title
-- Then ||Content||: containing your article wrapped in <article> tags
-- Use proper HTML structure with <h1>, <h2>, and <p> tags
-- Write engaging, informative content
-- End with ||Category||: [topic]
+        // Create specific user prompt
+        $user_prompt = "Write a professional blog post about [topic].
 
-The content should be well-structured, informative, and SEO-friendly.";
+Requirements:
+1. Create an SEO-optimized title that includes '[topic]'
+2. Write well-structured content with proper HTML tags
+3. Use h1 for main title, h2 for sections
+4. Include relevant keywords naturally
+5. Write engaging, informative paragraphs
+6. Add a strong conclusion
+7. Follow the exact structure shown above";
 
         // Combine messages
         $messages = array_merge(
@@ -984,9 +1002,13 @@ function parse_ai_content($ai_content) {
     $content = '';
     $category = '';
 
-    // Extract title
-    if (preg_match('/\|\|Title\|\|:\s*(.+?)(?=\|\|Content\|\||\s*$)/s', $ai_content, $matches)) {
-        $title = trim($matches[1]);
+    // Extract title - improved pattern matching
+    if (preg_match('/\|\|Title\|\|:\s*(?:"([^"]+)"|([^"\n]+))(?=\s*\|\||\s*<|\s*$)/s', $ai_content, $matches)) {
+        $title = !empty($matches[1]) ? $matches[1] : $matches[2];
+        $title = trim($title);
+    } elseif (preg_match('/<h1[^>]*>(.*?)<\/h1>/s', $ai_content, $matches)) {
+        // Backup: try to get title from H1 if ||Title|| format fails
+        $title = trim(strip_tags($matches[1]));
     }
 
     // Extract content
@@ -997,9 +1019,13 @@ function parse_ai_content($ai_content) {
     }
 
     // Extract category
-    if (preg_match('/\|\|Category\|\|:\s*(.+?)$/s', $ai_content, $matches)) {
+    if (preg_match('/\|\|Category\|\|:\s*([^\n]+)/s', $ai_content, $matches)) {
         $category = trim($matches[1]);
     }
+
+    // Clean up the title
+    $title = str_replace(['"', "'"], '', $title);
+    $title = preg_replace('/\s+/', ' ', $title);
 
     // Clean up the content
     $content = preg_replace('/\*\*(.*?)\*\*/', '<strong>$1</strong>', $content);
