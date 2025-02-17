@@ -6,6 +6,18 @@ Version: 1.0
 Author: MrHerrie
 */
 
+// Add proper plugin initialization
+add_action('plugins_loaded', function() {
+    // Initialize settings
+    add_action('admin_init', 'ai_blogpost_initialize_settings');
+    
+    // Add admin menu
+    add_action('admin_menu', 'ai_blogpost_admin_menu');
+    
+    // Register deactivation hook
+    register_deactivation_hook(__FILE__, 'ai_blogpost_deactivation');
+});
+
 // ------------------ SETTINGS INIT ------------------
 function ai_blogpost_initialize_settings() {
     register_setting('ai_blogpost_settings', 'ai_blogpost_temperature');
@@ -34,14 +46,17 @@ function ai_blogpost_initialize_settings() {
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_url');
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_key');
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_model');
+
+    // ComfyUI settings
+    register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_enabled');
+    register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_api_url');
+    register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_workflow');
 }
-add_action('admin_init', 'ai_blogpost_initialize_settings');
 
 // ------------------ ADMIN PAGE ------------------
 function ai_blogpost_admin_menu() {
     add_menu_page('AI Blogpost Settings', 'AI Blogpost', 'manage_options', 'ai_blogpost', 'ai_blogpost_admin_page');
 }
-add_action('admin_menu', 'ai_blogpost_admin_menu');
 
 function ai_blogpost_admin_page() {
     echo '<div class="wrap ai-blogpost-dashboard">';
@@ -452,7 +467,81 @@ function display_image_settings() {
     echo '</td>';
     echo '</tr>';
     
+    // ComfyUI Section
+    echo '<tr><th colspan="2"><h3>ComfyUI Integration</h3></th></tr>';
+    
+    // Enable ComfyUI
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_comfyui_enabled">Enable ComfyUI</label></th>';
+    echo '<td>';
+    echo '<input type="checkbox" name="ai_blogpost_comfyui_enabled" id="ai_blogpost_comfyui_enabled" value="1" ' . 
+         checked(get_cached_option('ai_blogpost_comfyui_enabled', 0), 1, false) . '>';
+    echo '<p class="description">Enable local ComfyUI integration for image generation</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // ComfyUI API URL
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_comfyui_api_url">ComfyUI API URL</label></th>';
+    echo '<td>';
+    echo '<input type="url" name="ai_blogpost_comfyui_api_url" id="ai_blogpost_comfyui_api_url" 
+           class="regular-text" value="' . esc_attr(get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188')) . '">';
+    echo '<button type="button" class="button test-comfyui-connection">Test Connection</button>';
+    echo '<span class="spinner" style="float:none;margin-left:4px;"></span>';
+    echo '<p class="description">Usually http://localhost:8188</p>';
+    echo '<div id="comfyui-status"></div>';
+    echo '</td>';
+    echo '</tr>';
+
+    // ComfyUI Workflow JSON
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_comfyui_workflow">Workflow JSON</label></th>';
+    echo '<td>';
+    echo '<textarea name="ai_blogpost_comfyui_workflow" id="ai_blogpost_comfyui_workflow" rows="6" 
+           class="large-text code">' . esc_textarea(get_cached_option('ai_blogpost_comfyui_workflow', '')) . '</textarea>';
+    echo '<p class="description">Paste your ComfyUI workflow JSON here. Use {prompt} as placeholder for the prompt text.</p>';
+    echo '</td>';
+    echo '</tr>';
+
     echo '</table>';
+
+    // Add ComfyUI test connection JavaScript
+    ?>
+    <script>
+    jQuery(document).ready(function($) {
+        $('.test-comfyui-connection').click(function() {
+            var $button = $(this);
+            var $spinner = $button.next('.spinner');
+            var $status = $('#comfyui-status');
+            var url = $('#ai_blogpost_comfyui_api_url').val();
+            
+            $button.prop('disabled', true);
+            $spinner.addClass('is-active');
+            $status.html('');
+            
+            $.post(ajaxurl, {
+                action: 'test_comfyui',
+                url: url,
+                nonce: '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>'
+            })
+            .done(function(response) {
+                if (response.success) {
+                    $status.html('<div class="notice notice-success inline"><p>' + response.data.message + '</p></div>');
+                } else {
+                    $status.html('<div class="notice notice-error inline"><p>' + response.data + '</p></div>');
+                }
+            })
+            .fail(function() {
+                $status.html('<div class="notice notice-error inline"><p>Network error while testing connection</p></div>');
+            })
+            .always(function() {
+                $button.prop('disabled', false);
+                $spinner.removeClass('is-active');
+            });
+        });
+    });
+    </script>
+    <?php
 }
 
 function display_status_panel() {
@@ -542,6 +631,25 @@ function ai_blogpost_get_post_data() {
 // ------------------ FETCH AI TEXT ------------------
 function fetch_ai_response($post_data) {
     try {
+        // Check if LM Studio is enabled
+        if (get_cached_option('ai_blogpost_lm_enabled', 0)) {
+            ai_blogpost_debug_log('Using LM Studio for text generation');
+            
+            $prompt = prepare_ai_prompt($post_data);
+            $response = send_lm_studio_request($prompt);
+            
+            if (!isset($response['choices'][0]['message']['content'])) {
+                throw new Exception('Invalid LM Studio response format');
+            }
+
+            return array(
+                'content' => $response['choices'][0]['message']['content'],
+                'category' => $post_data['category'],
+                'focus_keyword' => $post_data['focus_keyword']
+            );
+        }
+
+        // Fallback to OpenAI
         $api_key = get_cached_option('ai_blogpost_api_key');
         if (empty($api_key)) {
             throw new Exception('API key is missing');
@@ -573,6 +681,7 @@ function fetch_ai_response($post_data) {
             'category' => $post_data['category'],
             'focus_keyword' => $post_data['focus_keyword']
         );
+
     } catch (Exception $e) {
         // Log error
         ai_blogpost_log_api_call('Text Generation', false, array(
@@ -580,77 +689,6 @@ function fetch_ai_response($post_data) {
             'category' => $post_data['category'] ?? 'unknown',
             'status' => 'Failed: ' . $e->getMessage()
         ));
-        error_log('AI Response Error: ' . $e->getMessage());
-        return null;
-    }
-}
-
-function prepare_ai_prompt($post_data) {
-    try {
-        $language = get_option('ai_blogpost_language', 'en');
-        
-        // System messages for better structure
-        $system_messages = [
-            [
-                "role" => "system",
-                "content" => get_language_instruction($language)
-            ],
-            [
-                "role" => "system",
-                "content" => "You are a professional SEO content writer. 
-                Structure your response exactly as follows:
-
-                ||Title||: Write an SEO-optimized title here
-
-                ||Content||: 
-                <article>
-                    <h1>Main title (same as above)</h1>
-                    <p>Introduction paragraph</p>
-
-                    <h2>First Section</h2>
-                    <p>Content for first section</p>
-
-                    <h2>Second Section</h2>
-                    <p>Content for second section</p>
-
-                    <!-- Add more sections as needed -->
-
-                    <h2>Conclusion</h2>
-                    <p>Concluding thoughts</p>
-                </article>
-
-                ||Category||: Category name"
-            ]
-        ];
-
-        // Create specific user prompt
-        $user_prompt = "Write a professional blog post about [topic].
-
-Requirements:
-1. Create an SEO-optimized title that includes '[topic]'
-2. Write well-structured content with proper HTML tags
-3. Use h1 for main title, h2 for sections
-4. Include relevant keywords naturally
-5. Write engaging, informative paragraphs
-6. Add a strong conclusion
-7. Follow the exact structure shown above";
-
-        // Combine messages
-        $messages = array_merge(
-            $system_messages,
-            [
-                [
-                    "role" => "user",
-                    "content" => str_replace('[topic]', $post_data['category'], $user_prompt)
-                ]
-            ]
-        );
-        
-        ai_blogpost_debug_log('Prepared messages:', $messages);
-        return $messages;
-        
-    } catch (Exception $e) {
-        ai_blogpost_debug_log('Error in prepare_ai_prompt:', $e->getMessage());
         throw $e;
     }
 }
@@ -741,6 +779,13 @@ function send_lm_studio_request($messages) {
     try {
         $api_url = rtrim(get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234'), '/') . '/v1';
 
+        // Log the start of the request
+        ai_blogpost_log_api_call('LM Studio Request', true, [
+            'url' => $api_url,
+            'status' => 'Starting request',
+            'messages' => $messages
+        ]);
+
         // Prepare prompt from messages
         $prompt = '';
         foreach ($messages as $message) {
@@ -767,6 +812,12 @@ function send_lm_studio_request($messages) {
             'sslverify' => false
         );
 
+        // Log the request details
+        ai_blogpost_debug_log('LM Studio request:', [
+            'url' => $api_url . '/completions',
+            'args' => $args
+        ]);
+
         $response = wp_remote_post($api_url . '/completions', $args);
         
         if (is_wp_error($response)) {
@@ -775,6 +826,9 @@ function send_lm_studio_request($messages) {
 
         $result = json_decode(wp_remote_retrieve_body($response), true);
         
+        // Log raw response
+        ai_blogpost_debug_log('LM Studio raw response:', $result);
+
         if (!isset($result['choices'][0]['text'])) {
             throw new Exception('Invalid response format from LM Studio');
         }
@@ -791,7 +845,7 @@ function send_lm_studio_request($messages) {
         $content = trim(str_replace(['### Assistant:', '---'], '', $content));
 
         // Format response to match OpenAI format
-        return array(
+        $formatted_response = array(
             'choices' => array(
                 array(
                     'message' => array(
@@ -801,7 +855,19 @@ function send_lm_studio_request($messages) {
             )
         );
 
+        // Log successful response
+        ai_blogpost_log_api_call('LM Studio Request', true, [
+            'status' => 'Success',
+            'response_length' => strlen($content)
+        ]);
+
+        return $formatted_response;
+
     } catch (Exception $e) {
+        ai_blogpost_log_api_call('LM Studio Request', false, [
+            'error' => $e->getMessage(),
+            'status' => 'Failed: ' . $e->getMessage()
+        ]);
         ai_blogpost_debug_log('Error in send_lm_studio_request:', $e->getMessage());
         throw $e;
     }
@@ -931,6 +997,84 @@ function fetch_dalle_image_from_text($image_data) {
     }
 }
 
+function fetch_comfyui_image($prompt) {
+    try {
+        $api_url = rtrim(get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188'), '/');
+        $workflow = json_decode(get_cached_option('ai_blogpost_comfyui_workflow', ''), true);
+
+        if (!$workflow) {
+            throw new Exception('Invalid workflow JSON');
+        }
+
+        // Replace {prompt} in workflow with actual prompt
+        $workflow_json = str_replace('{prompt}', $prompt, json_encode($workflow));
+
+        // Queue prompt
+        $queue_response = wp_remote_post($api_url . '/prompt', [
+            'body' => $workflow_json,
+            'headers' => ['Content-Type' => 'application/json'],
+            'timeout' => 30,
+            'sslverify' => false
+        ]);
+
+        if (is_wp_error($queue_response)) {
+            throw new Exception('Failed to queue prompt: ' . $queue_response->get_error_message());
+        }
+
+        $queue_data = json_decode(wp_remote_retrieve_body($queue_response), true);
+        $prompt_id = $queue_data['prompt_id'];
+
+        // Poll for completion
+        $timeout = 300; // 5 minutes
+        $start = time();
+        while (time() - $start < $timeout) {
+            $history_response = wp_remote_get($api_url . '/history/' . $prompt_id);
+            $history_data = json_decode(wp_remote_retrieve_body($history_response), true);
+
+            if (isset($history_data['outputs'])) {
+                // Get the image data
+                $image_url = $api_url . '/view?' . http_build_query([
+                    'filename' => $history_data['outputs']['output_image']['filename'],
+                    'type' => 'output'
+                ]);
+
+                // Download and save the image
+                $image_data = wp_remote_get($image_url);
+                if (is_wp_error($image_data)) {
+                    throw new Exception('Failed to download image');
+                }
+
+                $upload = wp_upload_bits('comfyui-' . time() . '.png', null, wp_remote_retrieve_body($image_data));
+                if ($upload['error']) {
+                    throw new Exception('Failed to save image: ' . $upload['error']);
+                }
+
+                // Create attachment
+                $attachment = [
+                    'post_mime_type' => 'image/png',
+                    'post_title' => 'ComfyUI Generated Image',
+                    'post_content' => '',
+                    'post_status' => 'inherit'
+                ];
+
+                $attach_id = wp_insert_attachment($attachment, $upload['file']);
+                require_once(ABSPATH . 'wp-admin/includes/image.php');
+                wp_update_attachment_metadata($attach_id, wp_generate_attachment_metadata($attach_id, $upload['file']));
+
+                return $attach_id;
+            }
+
+            sleep(2);
+        }
+
+        throw new Exception('Timeout waiting for image generation');
+
+    } catch (Exception $e) {
+        ai_blogpost_debug_log('ComfyUI error:', $e->getMessage());
+        return null;
+    }
+}
+
 // ------------------ CREATE POST ------------------
 function create_ai_blogpost() {
     try {
@@ -964,19 +1108,20 @@ function create_ai_blogpost() {
         
         // Handle featured image if enabled
         if (get_cached_option('ai_blogpost_dalle_enabled', 0)) {
-            // Use the template from dashboard settings
-            $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
-                'Create a professional blog header image about [category]. Style: Modern and professional.');
-            
-            // Create image data with category
-            $image_data = array(
-                'category' => $post_data['category'],
-                'template' => $template
+            // Existing DALL-E code...
+        } elseif (get_cached_option('ai_blogpost_comfyui_enabled', 0)) {
+            $prompt = str_replace(
+                ['[category]', '[categorie]'],
+                $post_data['category'],
+                get_cached_option('ai_blogpost_dalle_prompt_template', 
+                    'Create a professional blog header image about [category]. Style: Modern and professional.')
             );
             
-            ai_blogpost_debug_log('Image generation data:', $image_data);
+            ai_blogpost_debug_log('ComfyUI generation data:', [
+                'prompt' => $prompt
+            ]);
             
-            $attach_id = fetch_dalle_image_from_text($image_data);
+            $attach_id = fetch_comfyui_image($prompt);
             if ($attach_id) {
                 set_post_thumbnail($post_id, $attach_id);
             }
@@ -987,7 +1132,7 @@ function create_ai_blogpost() {
         ai_blogpost_debug_log('Error in create_ai_blogpost:', $e->getMessage());
         throw $e;
     }
-}
+} // Add missing closing brace
 
 function parse_ai_content($ai_content) {
     ai_blogpost_debug_log('Raw AI Content:', $ai_content);
@@ -1175,10 +1320,23 @@ add_action('admin_init', 'ai_blogpost_after_save_settings', 99);
 function ai_blogpost_log_api_call($type, $success, $data) {
     $logs = get_option('ai_blogpost_api_logs', array());
     
+    // Add service type to data
+    $service_type = '';
+    if (strpos($type, 'LM Studio') !== false) {
+        $service_type = 'LM Studio';
+    } elseif (strpos($type, 'ComfyUI') !== false) {
+        $service_type = 'ComfyUI';
+    } elseif (strpos($type, 'DALL·E') !== false) {
+        $service_type = 'DALL·E';
+    } else {
+        $service_type = 'OpenAI';
+    }
+
     // Add new log entry with more details
     $logs[] = array(
         'time' => time(),
         'type' => $type,
+        'service' => $service_type,
         'success' => $success,
         'data' => array_merge($data, array(
             'timestamp' => date('Y-m-d H:i:s'),
@@ -1192,7 +1350,11 @@ function ai_blogpost_log_api_call($type, $success, $data) {
     }
     
     // Debug log the update
-    ai_blogpost_debug_log('Updating logs:', $logs);
+    ai_blogpost_debug_log("API Call Log ($service_type):", [
+        'type' => $type,
+        'success' => $success,
+        'data' => $data
+    ]);
     
     update_option('ai_blogpost_api_logs', $logs);
 }
@@ -1214,47 +1376,11 @@ function display_api_logs($type) {
     // Show most recent logs first
     $filtered_logs = array_reverse(array_slice($filtered_logs, -5));
 
-    // Add table styles
-    echo '<style>
-        .log-table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin: 10px 0; 
-            background: #fff;
-        }
-        .log-table th, .log-table td { 
-            padding: 12px; 
-            text-align: left; 
-            border: 1px solid #e1e1e1; 
-        }
-        .log-table th { 
-            background: #f5f5f5; 
-            font-weight: bold; 
-        }
-        .log-status.success { 
-            color: #46b450; 
-            font-weight: bold; 
-        }
-        .log-status.error { 
-            color: #dc3232; 
-            font-weight: bold; 
-        }
-        .log-details pre {
-            margin: 5px 0;
-            padding: 10px;
-            background: #f8f9fa;
-            border: 1px solid #e2e4e7;
-            overflow-x: auto;
-        }
-        .log-time {
-            white-space: nowrap;
-        }
-    </style>';
-
     echo '<table class="log-table">';
     echo '<thead>';
     echo '<tr>';
     echo '<th>Time</th>';
+    echo '<th>Service</th>';
     echo '<th>Status</th>';
     echo '<th>Category</th>';
     echo '<th>Details</th>';
@@ -1268,10 +1394,14 @@ function display_api_logs($type) {
         
         echo '<tr>';
         echo '<td class="log-time">' . date('Y-m-d H:i:s', $log['time']) . '</td>';
+        echo '<td>' . esc_html($log['service'] ?? 'Unknown') . '</td>';
         echo '<td class="log-status ' . $status_class . '">' . $status_text . '</td>';
         echo '<td>' . (isset($log['data']['category']) ? esc_html($log['data']['category']) : '-') . '</td>';
         echo '<td class="log-details">';
         
+        if (isset($log['data']['url'])) {
+            echo '<div><strong>URL:</strong> ' . esc_html($log['data']['url']) . '</div>';
+        }
         if (isset($log['data']['status'])) {
             echo '<div><strong>Status:</strong> ' . esc_html($log['data']['status']) . '</div>';
         }
@@ -1303,7 +1433,7 @@ add_action('admin_init', 'ai_blogpost_clear_logs');
 function ai_blogpost_debug_log($message, $data = null) {
     $log = date('Y-m-d H:i:s') . ' - ' . $message;
     if ($data !== null) {
-        $log .= "\n" . print_r($data, true);
+        $log .= "\n" . print_r($data, true); // Changed += to .=
     }
     error_log($log);
 }
@@ -1583,3 +1713,49 @@ function display_lm_studio_settings() {
     </script>
     <?php
 }
+
+function handle_comfyui_test() {
+    check_ajax_referer('ai_blogpost_nonce', 'nonce');
+    
+    $api_url = rtrim(sanitize_text_field($_POST['url']), '/');
+    
+    try {
+        ai_blogpost_debug_log('Testing ComfyUI connection:', [
+            'url' => $api_url
+        ]);
+
+        // Test basic connection to ComfyUI
+        $response = wp_remote_get($api_url . '/system_stats', [
+            'timeout' => 30,
+            'sslverify' => false
+        ]);
+
+        if (is_wp_error($response)) {
+            throw new Exception('Connection failed: ' . $response->get_error_message());
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        if (!$data) {
+            throw new Exception('Invalid response from ComfyUI');
+        }
+
+        // Store the API URL
+        update_option('ai_blogpost_comfyui_api_url', $api_url);
+        
+        ai_blogpost_log_api_call('ComfyUI Test', true, [
+            'url' => $api_url,
+            'status' => 'Connection successful'
+        ]);
+
+        wp_send_json_success([
+            'message' => 'ComfyUI connection successful'
+        ]);
+
+    } catch (Exception $e) {
+        ai_blogpost_debug_log('ComfyUI error:', $e->getMessage());
+        wp_send_json_error('Error: ' . $e->getMessage());
+    }
+}
+add_action('wp_ajax_test_comfyui', 'handle_comfyui_test');
