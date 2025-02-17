@@ -34,6 +34,9 @@ function ai_blogpost_initialize_settings() {
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_url');
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_key');
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_model');
+
+    // Add LLM provider setting
+    register_setting('ai_blogpost_settings', 'ai_blogpost_llm_provider');
 }
 add_action('admin_init', 'ai_blogpost_initialize_settings');
 
@@ -250,6 +253,75 @@ function display_general_settings() {
 function display_text_settings() {
     echo '<table class="form-table">';
     
+    // LLM Provider Selection
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_llm_provider">Text Generation Provider</label></th>';
+    echo '<td>';
+    echo '<select name="ai_blogpost_llm_provider" id="ai_blogpost_llm_provider">';
+    $provider = get_cached_option('ai_blogpost_llm_provider', 'openai');
+    echo '<option value="openai" ' . selected($provider, 'openai', false) . '>OpenAI</option>';
+    echo '<option value="lmstudio" ' . selected($provider, 'lmstudio', false) . '>LM Studio (Local)</option>';
+    echo '</select>';
+    echo '<p class="description">Select which provider to use for text generation</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    echo '<tbody id="openai-settings" class="provider-settings">';
+    display_openai_settings();
+    echo '</tbody>';
+
+    echo '<tbody id="lmstudio-settings" class="provider-settings">';
+    display_lm_studio_settings();
+    echo '</tbody>';
+
+    // Common settings at the bottom
+    display_common_settings();
+
+    echo '</table>';
+
+    ?>
+    <style>
+        .provider-settings { display: none; }
+        .provider-settings.active { display: table-row-group; }
+    </style>
+    <script>
+    jQuery(document).ready(function($) {
+        function toggleProviderSettings() {
+            var provider = $('#ai_blogpost_llm_provider').val();
+            $('.provider-settings').removeClass('active').hide();
+            $('#' + provider + '-settings').addClass('active').show();
+        }
+        $('#ai_blogpost_llm_provider').on('change', toggleProviderSettings);
+        toggleProviderSettings();
+    });
+    </script>
+    <?php
+}
+
+// Separate function for common settings
+function display_common_settings() {
+    // Temperature setting
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_temperature">Temperature</label></th>';
+    echo '<td>';
+    echo '<input type="number" step="0.1" min="0" max="2" name="ai_blogpost_temperature" id="ai_blogpost_temperature" 
+           value="' . esc_attr(get_cached_option('ai_blogpost_temperature', '0.7')) . '">';
+    echo '<p class="description">Controls randomness (0 = deterministic, 2 = very random)</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // Max Tokens setting
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_max_tokens">Max Tokens</label></th>';
+    echo '<td>';
+    echo '<input type="number" name="ai_blogpost_max_tokens" id="ai_blogpost_max_tokens" 
+           value="' . esc_attr(get_cached_option('ai_blogpost_max_tokens', '2048')) . '" min="100" max="4096">';
+    echo '<p class="description">Maximum length of generated text</p>';
+    echo '</td>';
+    echo '</tr>';
+}
+
+function display_openai_settings() {
     // OpenAI API Key
     echo '<tr>';
     echo '<th><label for="ai_blogpost_api_key">OpenAI API Key</label></th>';
@@ -267,106 +339,44 @@ function display_text_settings() {
     echo '</td>';
     echo '</tr>';
 
-    // Temperature
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_temperature">Temperature</label></th>';
-    echo '<td>';
-    echo '<input type="number" step="0.1" min="0" max="2" name="ai_blogpost_temperature" id="ai_blogpost_temperature" value="' . esc_attr(get_cached_option('ai_blogpost_temperature', '0.7')) . '">';
-    echo '<p class="description">Controls randomness (0 = deterministic, 2 = very random)</p>';
-    echo '</td>';
-    echo '</tr>';
+    // Refresh Models Button
+    add_refresh_models_button();
+}
 
-    // Max Tokens
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_max_tokens">Max Tokens</label></th>';
-    echo '<td>';
-    echo '<input type="number" name="ai_blogpost_max_tokens" id="ai_blogpost_max_tokens" 
-        value="' . esc_attr(get_cached_option('ai_blogpost_max_tokens', '2048')) . '"
-        min="100" max="4096">'; // Set reasonable limits
-    echo '<p class="description">Maximum length of generated text (max 4096 for safe operation)</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // System Role with better description
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_role">System Role</label></th>';
-    echo '<td>';
-    echo '<textarea name="ai_blogpost_role" id="ai_blogpost_role" rows="3" class="large-text code">';
-    echo esc_textarea(get_cached_option('ai_blogpost_role', 'You are a professional blog writer. Write engaging, SEO-friendly content about the given topic.'));
-    echo '</textarea>';
-    echo '<p class="description">Define the AI\'s role and writing style</p>';
-    echo '</td>';
-    echo '</tr>';
-    
-    // Simplified Prompt Template
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_prompt">Content Template</label></th>';
-    echo '<td>';
-    echo '<textarea name="ai_blogpost_prompt" id="ai_blogpost_prompt" rows="4" class="large-text code">';
-    echo esc_textarea(get_cached_option('ai_blogpost_prompt', 
-        "Write a blog post about [topic]. Structure the content as follows:
-
-||Title||: Create an engaging, SEO-friendly title
-
-||Content||: Write the main content here, using proper HTML structure:
-- Use <article> tags to wrap the content
-- Use <h1>, <h2> for headings
-- Use <p> for paragraphs
-- Include relevant subheadings
-- Add a strong conclusion
-
-||Category||: Suggest the most appropriate category for this post"));
-    echo '</textarea>';
-    
-    // Add template guide
-    echo '<div class="template-guide" style="margin-top: 10px; padding: 15px; background: #f8f9fa; border: 1px solid #e2e4e7; border-radius: 4px;">';
-    echo '<h4 style="margin-top: 0;">Content Structure Guide</h4>';
-    echo '<p class="description">Use these section markers to structure the content:</p>';
-    echo '<ul style="margin: 10px 0 0 20px; list-style-type: disc;">';
-    echo '<li><code>||Title||:</code> - The blog post title</li>';
-    echo '<li><code>||Content||:</code> - The main content (wrapped in <code>&lt;article&gt;</code> tags)</li>';
-    echo '<li><code>||Category||:</code> - The suggested category</li>';
-    echo '</ul>';
-    echo '<p class="description" style="margin-top: 10px;"><strong>Tips:</strong></p>';
-    echo '<ul style="margin: 5px 0 0 20px; list-style-type: disc;">';
-    echo '<li>Use [topic] in your prompt to reference the selected category</li>';
-    echo '<li>Add specific instructions about tone, style, or length in the System Role</li>';
-    echo '<li>Use HTML tags for proper content structure</li>';
-    echo '<li>Include SEO best practices in your instructions</li>';
-    echo '</ul>';
-    echo '</div>';
-    echo '</td>';
-    echo '</tr>';
-    
-    add_refresh_models_button(); // Add the refresh models button here
-    
-    // LM Studio Section
-    echo '<tr>';
-    echo '<th colspan="2"><h3>LM Studio Integration</h3></th>';
-    echo '</tr>';
-    
+function display_lm_studio_settings() {
     // Enable LM Studio
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_lm_enabled">Enable LM Studio</label></th>';
-    echo '<td>';
-    echo '<input type="checkbox" name="ai_blogpost_lm_enabled" id="ai_blogpost_lm_enabled" value="1" ' . 
-         checked(get_cached_option('ai_blogpost_lm_enabled', 0), 1, false) . '>';
-    echo '<p class="description">Enable local LM Studio integration for text generation</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // LM Studio API URL
     echo '<tr>';
     echo '<th><label for="ai_blogpost_lm_api_url">LM Studio API URL</label></th>';
     echo '<td>';
-    echo '<input type="url" name="ai_blogpost_lm_api_url" id="ai_blogpost_lm_api_url" class="regular-text" value="' . 
-         esc_attr(get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234/v1')) . '">';
+    echo '<input type="url" name="ai_blogpost_lm_api_url" id="ai_blogpost_lm_api_url" class="regular-text" value="' . esc_attr(get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234')) . '">';
     echo '<button type="button" class="button test-lm-connection">Test Connection</button>';
-    echo '<p class="description">Usually http://localhost:1234/v1</p>';
+    echo '<span class="spinner" style="float:none;margin-left:4px;"></span>';
+    echo '<p class="description">Usually http://localhost:1234 (without /v1)</p>';
+    echo '<div id="lm-studio-status"></div>';
+    echo '<div id="lm-studio-models"></div>';
     echo '</td>';
     echo '</tr>';
 
-    echo '</table>';
+    // Model Selection for LM Studio
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_lm_model">LM Studio Model</label></th>';
+    echo '<td>';
+    $models = get_option('ai_blogpost_available_lm_models', array());
+    echo '<select name="ai_blogpost_lm_model" id="ai_blogpost_lm_model">';
+    if (!empty($models)) {
+        foreach ($models as $model) {
+            $model_id = is_array($model) ? $model['id'] : $model;
+            echo '<option value="' . esc_attr($model_id) . '" ' . selected(get_cached_option('ai_blogpost_lm_model'), $model_id, false) . '>';
+            echo esc_html($model_id);
+            echo '</option>';
+        }
+    } else {
+        echo '<option value="model.gguf">model.gguf</option>';
+    }
+    echo '</select>';
+    echo '<p class="description">Select the model to use with LM Studio</p>';
+    echo '</td>';
+    echo '</tr>';
 }
 
 function display_image_settings() {
@@ -542,41 +552,54 @@ function ai_blogpost_get_post_data() {
 // ------------------ FETCH AI TEXT ------------------
 function fetch_ai_response($post_data) {
     try {
-        $api_key = get_cached_option('ai_blogpost_api_key');
-        if (empty($api_key)) {
-            throw new Exception('API key is missing');
-        }
-
-        // Log the start of the request
-        ai_blogpost_log_api_call('Text Generation', true, array(
-            'status' => 'Starting request',
-            'category' => $post_data['category']
-        ));
-
-        $prompt = prepare_ai_prompt($post_data);
-        $response = send_ai_request($prompt);
+        // Check which provider is selected
+        $provider = get_cached_option('ai_blogpost_llm_provider', 'openai');
         
-        if (!isset($response['choices'][0]['message']['content'])) {
-            throw new Exception('Invalid API response format');
+        ai_blogpost_debug_log('Using provider:', $provider);
+
+        if ($provider === 'lmstudio') {
+            // Use LM Studio
+            $api_url = get_cached_option('ai_blogpost_lm_api_url');
+            if (empty($api_url)) {
+                throw new Exception('LM Studio API URL is missing');
+            }
+
+            $prompt = prepare_ai_prompt($post_data);
+            $response = send_lm_studio_request($prompt);
+            
+            if (!isset($response['choices'][0]['message']['content'])) {
+                throw new Exception('Invalid LM Studio response format');
+            }
+
+            return array(
+                'content' => $response['choices'][0]['message']['content'],
+                'category' => $post_data['category'],
+                'focus_keyword' => $post_data['focus_keyword']
+            );
+        } else {
+            // Use OpenAI
+            $api_key = get_cached_option('ai_blogpost_api_key');
+            if (empty($api_key)) {
+                throw new Exception('OpenAI API key is missing');
+            }
+
+            $prompt = prepare_ai_prompt($post_data);
+            $response = send_ai_request($prompt);
+            
+            if (!isset($response['choices'][0]['message']['content'])) {
+                throw new Exception('Invalid OpenAI response format');
+            }
+
+            return array(
+                'content' => $response['choices'][0]['message']['content'],
+                'category' => $post_data['category'],
+                'focus_keyword' => $post_data['focus_keyword']
+            );
         }
-
-        // Log successful response
-        ai_blogpost_log_api_call('Text Generation', true, array(
-            'prompt' => $prompt,
-            'content' => $response['choices'][0]['message']['content'],
-            'status' => 'Content generated successfully',
-            'category' => $post_data['category']
-        ));
-
-        return array(
-            'content' => $response['choices'][0]['message']['content'],
-            'category' => $post_data['category'],
-            'focus_keyword' => $post_data['focus_keyword']
-        );
     } catch (Exception $e) {
-        // Log error
         ai_blogpost_log_api_call('Text Generation', false, array(
             'error' => $e->getMessage(),
+            'provider' => get_cached_option('ai_blogpost_llm_provider', 'openai'),
             'category' => $post_data['category'] ?? 'unknown',
             'status' => 'Failed: ' . $e->getMessage()
         ));
@@ -741,6 +764,8 @@ function send_lm_studio_request($messages) {
     try {
         $api_url = rtrim(get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234'), '/') . '/v1';
 
+        ai_blogpost_debug_log('LM Studio request to:', $api_url);
+
         // Prepare prompt from messages
         $prompt = '';
         foreach ($messages as $message) {
@@ -754,10 +779,9 @@ function send_lm_studio_request($messages) {
 
         $args = array(
             'body' => json_encode(array(
-                'model' => get_cached_option('ai_blogpost_lm_model', 'model.gguf'),
                 'prompt' => $prompt,
                 'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
-                'max_tokens' => 2048,
+                'max_tokens' => (int)get_cached_option('ai_blogpost_max_tokens', 2048),
                 'stream' => false
             )),
             'headers' => array(
@@ -767,6 +791,8 @@ function send_lm_studio_request($messages) {
             'sslverify' => false
         );
 
+        ai_blogpost_debug_log('LM Studio request args:', $args);
+
         $response = wp_remote_post($api_url . '/completions', $args);
         
         if (is_wp_error($response)) {
@@ -774,28 +800,18 @@ function send_lm_studio_request($messages) {
         }
 
         $result = json_decode(wp_remote_retrieve_body($response), true);
+        ai_blogpost_debug_log('LM Studio raw response:', $result);
         
         if (!isset($result['choices'][0]['text'])) {
             throw new Exception('Invalid response format from LM Studio');
         }
-
-        // Extract actual content from response
-        $content = $result['choices'][0]['text'];
-        
-        // Remove thinking process if present
-        if (strpos($content, '</think>') !== false) {
-            $content = substr($content, strpos($content, '</think>') + 8);
-        }
-
-        // Clean up the response
-        $content = trim(str_replace(['### Assistant:', '---'], '', $content));
 
         // Format response to match OpenAI format
         return array(
             'choices' => array(
                 array(
                     'message' => array(
-                        'content' => $content
+                        'content' => trim($result['choices'][0]['text'])
                     )
                 )
             )
