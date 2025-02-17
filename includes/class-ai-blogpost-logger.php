@@ -15,8 +15,29 @@ class AI_Blogpost_Logger {
     }
 
     public function log_api_call($type, $success, $data) {
-        // Implementation moved from original code
-        // Handles API call logging
+        $logs = get_option('ai_blogpost_api_logs', array());
+        
+        $logs[] = array(
+            'time' => time(),
+            'type' => $type,
+            'success' => $success,
+            'data' => array_merge($data, array(
+                'timestamp' => date('Y-m-d H:i:s'),
+                'request_id' => uniqid()
+            ))
+        );
+        
+        if (count($logs) > 20) {
+            $logs = array_slice($logs, -20);
+        }
+        
+        $this->log('API Call:', array(
+            'type' => $type,
+            'success' => $success,
+            'data' => $data
+        ));
+        
+        update_option('ai_blogpost_api_logs', $logs);
     }
 
     public function display_logs($type) {
@@ -25,7 +46,6 @@ class AI_Blogpost_Logger {
     }
 
     public function clear_logs() {
-        // Implementation moved from original code
-        // Clears stored logs
+        delete_option('ai_blogpost_api_logs');
     }
 }
