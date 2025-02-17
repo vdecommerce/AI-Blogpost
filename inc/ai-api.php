@@ -436,78 +436,37 @@ function fetch_dalle_image($image_data) {
  * @return int|null Attachment ID or null on failure
  */
 /**
- * Get or refresh ComfyUI client ID
- * 
+ * Get or create a new ComfyUI client ID
+ *
  * @param string $api_url The ComfyUI API URL
- * @param bool $force_refresh Whether to force a refresh of the client ID
  * @return string Valid client ID
- * @throws Exception if unable to get valid client ID
+ * @throws Exception if unable to get a valid client ID
  */
-function get_comfyui_client_id($api_url, $force_refresh = false) {
-    try {
-        $client_id = get_cached_option('ai_blogpost_comfyui_client_id');
-        
-        // Get new client ID if none exists, forced refresh, or validation fails
-        if (empty($client_id) || $force_refresh || !validate_comfyui_client_id($api_url, $client_id)) {
-            ai_blogpost_debug_log('Requesting new ComfyUI client ID');
-            
-            $response = wp_remote_get($api_url . '/client_id', [
-                'timeout' => 30,
-                'sslverify' => false
-            ]);
+function get_or_create_comfyui_client_id($api_url) {
+    $client_id = get_transient('ai_blogpost_comfyui_client_id');
 
-            if (is_wp_error($response)) {
-                throw new Exception('Failed to get client ID: ' . $response->get_error_message());
-            }
-
-            $body = wp_remote_retrieve_body($response);
-            $data = json_decode($body, true);
-            
-            if (empty($data['client_id'])) {
-                throw new Exception('Invalid client ID response from ComfyUI server');
-            }
-
-            $client_id = $data['client_id'];
-            update_option('ai_blogpost_comfyui_client_id', $client_id);
-            
-            ai_blogpost_debug_log('New client ID obtained:', $client_id);
-        }
-        
-        return $client_id;
-    } catch (Exception $e) {
-        ai_blogpost_debug_log('Error in get_comfyui_client_id:', $e->getMessage());
-        throw $e;
-    }
-}
-
-/**
- * Validate ComfyUI client ID
- * 
- * @param string $api_url The ComfyUI API URL
- * @param string $client_id The client ID to validate
- * @return bool Whether the client ID is valid
- */
-function validate_comfyui_client_id($api_url, $client_id) {
-    try {
-        // Try to get server status with client ID
-        $response = wp_remote_get($api_url . '/system_stats', [
-            'headers' => ['client_id' => $client_id],
-            'timeout' => 10,
+    if (empty($client_id)) {
+        $response = wp_remote_get($api_url . '/client_id', [
+            'timeout' => 30,
             'sslverify' => false
         ]);
 
         if (is_wp_error($response)) {
-            return false;
+            throw new Exception('Failed to get client ID: ' . $response->get_error_message());
         }
 
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
-        
-        // If we get a valid response, client ID is still valid
-        return !empty($data) && is_array($data);
-    } catch (Exception $e) {
-        return false;
+
+        if (empty($data['client_id'])) {
+            throw new Exception('Invalid client ID response from ComfyUI server');
+        }
+
+        $client_id = $data['client_id'];
+        set_transient('ai_blogpost_comfyui_client_id', $client_id, DAY_IN_SECONDS);
     }
+
+    return $client_id;
 }
 
 function fetch_comfyui_image_from_text($image_data) {
@@ -1351,44 +1310,32 @@ function fetch_comfyui_image_from_text($image_data) {
                 }
 
                 if ($image_data) {
-                    // Download the image
-                    $image_response = wp_remote_get($api_url . '/view?' . http_build_query([
+                    $image_url = $api_url . '/view?' . http_build_query([
                         'filename' => $image_data['filename'],
                         'subfolder' => $image_data['subfolder'] ?? '',
                         'type' => $image_data['type']
-                    ]), [
+                    ]);
+
+                    $image_response = wp_remote_get($image_url, [
                         'timeout' => 30,
                         'sslverify' => false
                     ]);
 
-                    if (is_wp_error($image_response)) {
-                        throw new Exception('Failed to download image: ' . $image_response->get_error_message());
-                    }
+                    if (!is_wp_error($image_response)) {
+                        $filename = 'comfyui-' . sanitize_title($category) . '-' . time() . '.png';
+                        $upload = wp_upload_bits($filename, null, wp_remote_retrieve_body($image_response));
 
-                    // Save image
-                    $filename = 'comfyui-' . sanitize_title($category) . '-' . time() . '.png';
-                    $upload = wp_upload_bits($filename, null, wp_remote_retrieve_body($image_response));
-                    
-                    if (!empty($upload['error'])) {
-                        throw new Exception('Failed to save image: ' . $upload['error']);
-                    }
+                        if (empty($upload['error'])) {
+                            $attach_id = wp_insert_attachment([
+                                'post_mime_type' => wp_check_filetype($filename)['type'],
+                                'post_title' => sanitize_file_name($filename),
+                                'post_content' => '',
+                                'post_status' => 'inherit'
+                            ], $upload['file']);
 
-                    // Create attachment
-                    $attachment = [
-                        'post_mime_type' => wp_check_filetype($filename)['type'],
-                        'post_title' => sanitize_file_name($filename),
-                        'post_content' => '',
-                        'post_status' => 'inherit'
-                    ];
-
-                    $attach_id = wp_insert_attachment($attachment, $upload['file']);
-                    if (is_wp_error($attach_id)) {
-                        throw new Exception('Failed to create attachment');
-                    }
-
-                    require_once(ABSPATH . 'wp-admin/includes/image.php');
-                    $attach_data = wp_generate_attachment_metadata($attach_id, $upload['file']);
-                    wp_update_attachment_metadata($attach_id, $attach_data);
+                            if (!is_wp_error($attach_id)) {
+                                require_once(ABSPATH . 'wp-admin/includes/image.php');
+                                wp_update_attachment_metadata($attach_id, wp_generate_attachment_metadata($attach_id, $upload['file']));
 
                     // Log success
                     ai_blogpost_log_api_call('Image Generation', true, [
@@ -1454,19 +1401,7 @@ function fetch_openai_models() {
             throw new Exception('Invalid API response format');
         }
 
-        // Filter for GPT and DALL-E models
-        $gpt_models = [];
-        $dalle_models = [];
-        foreach ($body['data'] as $model) {
-            if (strpos($model['id'], 'gpt') !== false) {
-                $gpt_models[] = $model['id'];
-            } elseif (strpos($model['id'], 'dall-e') !== false) {
-                $dalle_models[] = $model['id'];
-            }
-        }
-
-        update_option('ai_blogpost_available_gpt_models', $gpt_models);
-        update_option('ai_blogpost_available_dalle_models', $dalle_models);
+        update_option('ai_blogpost_available_models', $body['data']);
         return true;
 
     } catch (Exception $e) {
