@@ -261,10 +261,24 @@ function send_lm_studio_request($messages) {
  * @return int|null Attachment ID or null on failure
  */
 function fetch_dalle_image_from_text($image_data) {
-    $dalle_enabled = get_cached_option('ai_blogpost_dalle_enabled', 0);
-    if (!$dalle_enabled) {
-        return null;
+    $generation_type = get_cached_option('ai_blogpost_image_generation_type', 'none');
+    
+    if ($generation_type === 'comfyui') {
+        return fetch_comfyui_image_from_text($image_data);
+    } elseif ($generation_type === 'dalle') {
+        return fetch_dalle_image($image_data);
     }
+    
+    return null;
+}
+
+/**
+ * Fetch image using DALL-E
+ * 
+ * @param array $image_data Image generation data
+ * @return int|null Attachment ID or null on failure
+ */
+function fetch_dalle_image($image_data) {
 
     try {
         // Validate image data
@@ -375,6 +389,190 @@ function fetch_dalle_image_from_text($image_data) {
         ai_blogpost_log_api_call('Image Generation', false, [
             'error' => $e->getMessage(),
             'prompt' => $dalle_prompt ?? '',
+            'category' => $category ?? 'unknown',
+            'status' => 'Error: ' . $e->getMessage()
+        ]);
+        
+        return null;
+    }
+}
+
+/**
+ * Fetch image using ComfyUI
+ * 
+ * @param array $image_data Image generation data
+ * @return int|null Attachment ID or null on failure
+ */
+function fetch_comfyui_image_from_text($image_data) {
+    try {
+        // Validate image data
+        if (!is_array($image_data) || empty($image_data['category'])) {
+            throw new Exception('Invalid image data structure');
+        }
+
+        $category = $image_data['category'];
+        $api_url = rtrim(get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188'), '/');
+        $client_id = get_cached_option('ai_blogpost_comfyui_client_id');
+        
+        if (empty($client_id)) {
+            throw new Exception('ComfyUI client ID not found');
+        }
+
+        // Get workflow configuration
+        $workflows = json_decode(get_cached_option('ai_blogpost_comfyui_workflows', '[]'), true);
+        $default_workflow = get_cached_option('ai_blogpost_comfyui_default_workflow', '');
+        
+        if (empty($workflows)) {
+            throw new Exception('No ComfyUI workflows configured');
+        }
+
+        // Find the selected workflow
+        $workflow_config = null;
+        foreach ($workflows as $workflow) {
+            if ($workflow['name'] === $default_workflow) {
+                $workflow_config = $workflow;
+                break;
+            }
+        }
+
+        if (!$workflow_config) {
+            throw new Exception('Selected workflow not found');
+        }
+
+        // Replace prompt placeholder in workflow
+        $workflow_data = $workflow_config['workflow'];
+        foreach ($workflow_data['nodes'] as &$node) {
+            if (isset($node['inputs']) && isset($node['inputs']['text'])) {
+                $node['inputs']['text'] = str_replace(
+                    ['[category]', '[categorie]'],
+                    $category,
+                    $node['inputs']['text']
+                );
+            }
+        }
+
+        // Initial log
+        ai_blogpost_log_api_call('Image Generation', true, [
+            'type' => 'ComfyUI',
+            'category' => $category,
+            'workflow' => $workflow_config['name'],
+            'status' => 'Starting image generation'
+        ]);
+
+        // Queue prompt
+        $queue_response = wp_remote_post($api_url . '/prompt', [
+            'headers' => ['Content-Type' => 'application/json'],
+            'body' => json_encode([
+                'prompt' => $workflow_data,
+                'client_id' => $client_id
+            ]),
+            'timeout' => 30,
+            'sslverify' => false
+        ]);
+
+        if (is_wp_error($queue_response)) {
+            throw new Exception('Failed to queue prompt: ' . $queue_response->get_error_message());
+        }
+
+        $queue_data = json_decode(wp_remote_retrieve_body($queue_response), true);
+        if (empty($queue_data['prompt_id'])) {
+            throw new Exception('Invalid queue response');
+        }
+
+        $prompt_id = $queue_data['prompt_id'];
+        $start_time = time();
+        $timeout = 300; // 5 minutes timeout
+
+        // Poll for completion
+        while (time() - $start_time < $timeout) {
+            $history_response = wp_remote_get($api_url . '/history/' . $prompt_id, [
+                'timeout' => 30,
+                'sslverify' => false
+            ]);
+
+            if (is_wp_error($history_response)) {
+                throw new Exception('Failed to check history: ' . $history_response->get_error_message());
+            }
+
+            $history_data = json_decode(wp_remote_retrieve_body($history_response), true);
+            
+            if (!empty($history_data['outputs'])) {
+                // Find the image output node
+                $image_data = null;
+                foreach ($history_data['outputs'] as $node_id => $output) {
+                    if (!empty($output['images'])) {
+                        $image_data = $output['images'][0];
+                        break;
+                    }
+                }
+
+                if ($image_data) {
+                    // Download the image
+                    $image_response = wp_remote_get($api_url . '/view?' . http_build_query([
+                        'filename' => $image_data['filename'],
+                        'subfolder' => $image_data['subfolder'] ?? '',
+                        'type' => $image_data['type']
+                    ]), [
+                        'timeout' => 30,
+                        'sslverify' => false
+                    ]);
+
+                    if (is_wp_error($image_response)) {
+                        throw new Exception('Failed to download image: ' . $image_response->get_error_message());
+                    }
+
+                    // Save image
+                    $filename = 'comfyui-' . sanitize_title($category) . '-' . time() . '.png';
+                    $upload = wp_upload_bits($filename, null, wp_remote_retrieve_body($image_response));
+                    
+                    if (!empty($upload['error'])) {
+                        throw new Exception('Failed to save image: ' . $upload['error']);
+                    }
+
+                    // Create attachment
+                    $attachment = [
+                        'post_mime_type' => wp_check_filetype($filename)['type'],
+                        'post_title' => sanitize_file_name($filename),
+                        'post_content' => '',
+                        'post_status' => 'inherit'
+                    ];
+
+                    $attach_id = wp_insert_attachment($attachment, $upload['file']);
+                    if (is_wp_error($attach_id)) {
+                        throw new Exception('Failed to create attachment');
+                    }
+
+                    require_once(ABSPATH . 'wp-admin/includes/image.php');
+                    $attach_data = wp_generate_attachment_metadata($attach_id, $upload['file']);
+                    wp_update_attachment_metadata($attach_id, $attach_data);
+
+                    // Log success
+                    ai_blogpost_log_api_call('Image Generation', true, [
+                        'type' => 'ComfyUI',
+                        'category' => $category,
+                        'workflow' => $workflow_config['name'],
+                        'image_id' => $attach_id,
+                        'status' => 'Image Generated Successfully'
+                    ]);
+
+                    return $attach_id;
+                }
+            }
+
+            if (!empty($history_data['error'])) {
+                throw new Exception('Workflow error: ' . $history_data['error']);
+            }
+
+            sleep(2);
+        }
+
+        throw new Exception('Generation timed out');
+
+    } catch (Exception $e) {
+        // Log error
+        ai_blogpost_log_api_call('Image Generation', false, [
+            'type' => 'ComfyUI',
+            'error' => $e->getMessage(),
             'category' => $category ?? 'unknown',
             'status' => 'Error: ' . $e->getMessage()
         ]);
