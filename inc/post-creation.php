@@ -82,10 +82,14 @@ function create_ai_blogpost() {
 
         $post_id = wp_insert_post($post_args);
         
-        // Handle featured image if enabled
-        if (get_cached_option('ai_blogpost_dalle_enabled', 0)) {
-            // Use the template from dashboard settings
-            $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
+        // Handle featured image generation
+        $generation_type = get_cached_option('ai_blogpost_image_generation_type', 'none');
+        if ($generation_type !== 'none') {
+            ai_blogpost_debug_log('Starting image generation with type:', $generation_type);
+            
+            // Use the appropriate template based on generation type
+            $template_key = $generation_type === 'dalle' ? 'ai_blogpost_dalle_prompt_template' : 'ai_blogpost_comfyui_prompt_template';
+            $template = get_cached_option($template_key, 
                 'Create a professional blog header image about [category]. Style: Modern and professional.');
             
             // Create image data with category
@@ -96,9 +100,18 @@ function create_ai_blogpost() {
             
             ai_blogpost_debug_log('Image generation data:', $image_data);
             
-            $attach_id = fetch_dalle_image_from_text($image_data);
-            if ($attach_id) {
-                set_post_thumbnail($post_id, $attach_id);
+            try {
+                $attach_id = fetch_dalle_image_from_text($image_data);
+                if ($attach_id) {
+                    set_post_thumbnail($post_id, $attach_id);
+                    ai_blogpost_debug_log('Successfully set featured image:', $attach_id);
+                } else {
+                    throw new Exception('Image generation failed - no attachment ID returned');
+                }
+            } catch (Exception $e) {
+                ai_blogpost_debug_log('Image generation error:', $e->getMessage());
+                // Don't fail the whole post creation if image fails
+                error_log('AI Blogpost Image Generation Error: ' . $e->getMessage());
             }
         }
 
