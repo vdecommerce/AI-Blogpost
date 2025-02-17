@@ -445,32 +445,99 @@ function fetch_dalle_image($image_data) {
  */
 function get_comfyui_client_id($api_url, $force_refresh = false) {
     try {
+        // Validate API URL format
+        if (!filter_var($api_url, FILTER_VALIDATE_URL)) {
+            throw new Exception('Invalid ComfyUI API URL format');
+        }
+
+        // Ensure URL is properly formatted
+        $api_url = rtrim($api_url, '/');
+        if (!preg_match('/^https?:\/\//', $api_url)) {
+            $api_url = 'http://' . $api_url;
+        }
+
+        ai_blogpost_debug_log('ComfyUI API URL:', $api_url);
+
+        // Check if we have a cached client ID
         $client_id = get_cached_option('ai_blogpost_comfyui_client_id');
         
         // Get new client ID if none exists, forced refresh, or validation fails
         if (empty($client_id) || $force_refresh || !validate_comfyui_client_id($api_url, $client_id)) {
-            ai_blogpost_debug_log('Requesting new ComfyUI client ID');
+            ai_blogpost_debug_log('Requesting new ComfyUI client ID - Force refresh:', $force_refresh ? 'true' : 'false');
             
-            $response = wp_remote_get($api_url . '/client_id', [
-                'timeout' => 30,
-                'sslverify' => false
-            ]);
+            // Implement retry logic
+            $max_retries = 3;
+            $retry_delay = 2; // seconds
+            $attempt = 0;
+            $last_error = null;
 
-            if (is_wp_error($response)) {
-                throw new Exception('Failed to get client ID: ' . $response->get_error_message());
+            while ($attempt < $max_retries) {
+                try {
+                    $response = wp_remote_get($api_url . '/client_id', [
+                        'timeout' => 30,
+                        'sslverify' => false,
+                        'headers' => [
+                            'Accept' => 'application/json'
+                        ]
+                    ]);
+
+                    if (is_wp_error($response)) {
+                        throw new Exception('Failed to get client ID: ' . $response->get_error_message());
+                    }
+
+                    $response_code = wp_remote_retrieve_response_code($response);
+                    if ($response_code !== 200) {
+                        throw new Exception('Invalid response code: ' . $response_code);
+                    }
+
+                    $body = wp_remote_retrieve_body($response);
+                    ai_blogpost_debug_log('ComfyUI Response:', $body);
+                    
+                    $data = json_decode($body, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        throw new Exception('Invalid JSON response: ' . json_last_error_msg());
+                    }
+                    
+                    if (empty($data['client_id'])) {
+                        throw new Exception('Invalid client ID response from ComfyUI server');
+                    }
+
+                    $client_id = $data['client_id'];
+                    update_option('ai_blogpost_comfyui_client_id', $client_id);
+                    
+                    ai_blogpost_debug_log('New client ID obtained:', $client_id);
+                    
+                    // Validate the new client ID immediately
+                    if (!validate_comfyui_client_id($api_url, $client_id)) {
+                        throw new Exception('Failed to validate new client ID');
+                    }
+
+                    return $client_id;
+
+                } catch (Exception $e) {
+                    $last_error = $e;
+                    $attempt++;
+                    
+                    ai_blogpost_debug_log(sprintf(
+                        'ComfyUI client ID attempt %d/%d failed: %s',
+                        $attempt,
+                        $max_retries,
+                        $e->getMessage()
+                    ));
+
+                    if ($attempt < $max_retries) {
+                        sleep($retry_delay);
+                    }
+                }
             }
 
-            $body = wp_remote_retrieve_body($response);
-            $data = json_decode($body, true);
-            
-            if (empty($data['client_id'])) {
-                throw new Exception('Invalid client ID response from ComfyUI server');
-            }
-
-            $client_id = $data['client_id'];
-            update_option('ai_blogpost_comfyui_client_id', $client_id);
-            
-            ai_blogpost_debug_log('New client ID obtained:', $client_id);
+            // If we get here, all retries failed
+            throw new Exception(
+                sprintf('Failed to get valid client ID after %d attempts. Last error: %s',
+                    $max_retries,
+                    $last_error ? $last_error->getMessage() : 'Unknown error'
+                )
+            );
         }
         
         return $client_id;
@@ -489,42 +556,109 @@ function get_comfyui_client_id($api_url, $force_refresh = false) {
  */
 function validate_comfyui_client_id($api_url, $client_id) {
     try {
-        // Try to get server status with client ID
-        $response = wp_remote_get($api_url . '/system_stats', [
-            'headers' => ['client_id' => $client_id],
-            'timeout' => 10,
-            'sslverify' => false
+        ai_blogpost_debug_log('Starting ComfyUI client ID validation:', [
+            'api_url' => $api_url,
+            'client_id' => $client_id
         ]);
 
-        if (is_wp_error($response)) {
-            return false;
+        if (empty($api_url) || empty($client_id)) {
+            throw new Exception('API URL or client ID is empty');
         }
 
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        // If we get a valid response, client ID is still valid
-        return !empty($data) && is_array($data);
+        // Validate URL format
+        if (!filter_var($api_url, FILTER_VALIDATE_URL)) {
+            throw new Exception('Invalid API URL format');
+        }
+
+        // Array of endpoints to try in order
+        $endpoints = [
+            '/system_stats' => function($data) {
+                return !empty($data) && is_array($data);
+            },
+            '/history' => function($data) {
+                return is_array($data);
+            },
+            '/queue' => function($data) {
+                return isset($data['queue_running']) || isset($data['items']);
+            }
+        ];
+
+        foreach ($endpoints as $endpoint => $validator) {
+            ai_blogpost_debug_log('Trying endpoint:', $endpoint);
+            
+            $response = wp_remote_get($api_url . $endpoint, [
+                'headers' => [
+                    'client_id' => $client_id,
+                    'Accept' => 'application/json'
+                ],
+                'timeout' => 15,
+                'sslverify' => false
+            ]);
+
+            if (is_wp_error($response)) {
+                ai_blogpost_debug_log("Endpoint $endpoint failed:", $response->get_error_message());
+                continue;
+            }
+
+            $response_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            
+            if (empty($body)) {
+                ai_blogpost_debug_log("Empty response from $endpoint");
+                continue;
+            }
+
+            $data = json_decode($body, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                ai_blogpost_debug_log("Invalid JSON from $endpoint:", json_last_error_msg());
+                continue;
+            }
+
+            ai_blogpost_debug_log("Response from $endpoint:", [
+                'code' => $response_code,
+                'body' => $body,
+                'parsed_data' => $data
+            ]);
+
+            if ($response_code === 200 && $validator($data)) {
+                ai_blogpost_debug_log("Validation successful using $endpoint");
+                return true;
+            }
+        }
+
+        throw new Exception('All validation endpoints failed');
+
     } catch (Exception $e) {
+        ai_blogpost_debug_log('ComfyUI validation error:', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
         return false;
     }
 }
 
 function fetch_comfyui_image_from_text($image_data) {
     try {
+        ai_blogpost_debug_log('Starting ComfyUI image generation:', $image_data);
+
         // Validate image data
-        if (!is_array($image_data) || empty($image_data['category'])) {
-            throw new Exception('Invalid image data structure');
+        if (!is_array($image_data)) {
+            throw new Exception('Image data must be an array');
+        }
+        if (empty($image_data['category'])) {
+            throw new Exception('Category is required in image data');
         }
 
         $category = $image_data['category'];
         $api_url = get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188');
         
-        // Ensure URL is properly formatted
-        $api_url = rtrim($api_url, '/');
-        if (!preg_match('/^https?:\/\//', $api_url)) {
-            $api_url = 'http://' . $api_url;
+        // Validate and format API URL
+        if (!filter_var($api_url, FILTER_VALIDATE_URL)) {
+            $api_url = 'http://' . ltrim($api_url, '/');
         }
+        $api_url = rtrim($api_url, '/');
+        
+        ai_blogpost_debug_log('ComfyUI API URL:', $api_url);
 
         // Get valid client ID with retry logic
         $max_retries = 3;
@@ -548,13 +682,27 @@ function fetch_comfyui_image_from_text($image_data) {
             throw new Exception('Unable to obtain valid ComfyUI client ID');
         }
 
-        // Get workflow configuration
-        $workflows = json_decode(get_cached_option('ai_blogpost_comfyui_workflows', '[]'), true);
-        $default_workflow = get_cached_option('ai_blogpost_comfyui_default_workflow', '');
+        // Get workflow configuration with validation
+        $workflows_json = get_cached_option('ai_blogpost_comfyui_workflows', '[]');
+        $workflows = json_decode($workflows_json, true);
         
-        if (empty($workflows)) {
-            throw new Exception('No ComfyUI workflows configured');
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new Exception('Invalid workflows JSON: ' . json_last_error_msg());
         }
+        
+        if (empty($workflows) || !is_array($workflows)) {
+            throw new Exception('No valid ComfyUI workflows configured');
+        }
+
+        $default_workflow = get_cached_option('ai_blogpost_comfyui_default_workflow', '');
+        if (empty($default_workflow)) {
+            throw new Exception('No default workflow selected');
+        }
+        
+        ai_blogpost_debug_log('ComfyUI Workflow Configuration:', [
+            'default_workflow' => $default_workflow,
+            'available_workflows' => array_column($workflows, 'name')
+        ]);
 
         // Find the selected workflow
         $workflow_config = null;
@@ -589,42 +737,91 @@ function fetch_comfyui_image_from_text($image_data) {
             'status' => 'Starting image generation'
         ]);
 
-        // Queue prompt
-        $queue_response = wp_remote_post($api_url . '/prompt', [
-            'headers' => ['Content-Type' => 'application/json'],
+        // Queue prompt with enhanced error handling
+        $queue_request = [
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ],
             'body' => json_encode([
                 'prompt' => $workflow_data,
                 'client_id' => $client_id
             ]),
             'timeout' => 30,
             'sslverify' => false
+        ];
+
+        ai_blogpost_debug_log('Queueing ComfyUI prompt:', [
+            'url' => $api_url . '/prompt',
+            'client_id' => $client_id,
+            'workflow_name' => $workflow_config['name']
         ]);
+
+        $queue_response = wp_remote_post($api_url . '/prompt', $queue_request);
 
         if (is_wp_error($queue_response)) {
             throw new Exception('Failed to queue prompt: ' . $queue_response->get_error_message());
         }
 
-        $queue_data = json_decode(wp_remote_retrieve_body($queue_response), true);
-        if (empty($queue_data['prompt_id'])) {
-            throw new Exception('Invalid queue response');
+        $response_code = wp_remote_retrieve_response_code($queue_response);
+        if ($response_code !== 200) {
+            throw new Exception('Invalid response code from queue endpoint: ' . $response_code);
         }
+
+        $queue_body = wp_remote_retrieve_body($queue_response);
+        $queue_data = json_decode($queue_body, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new Exception('Invalid JSON response from queue endpoint: ' . json_last_error_msg());
+        }
+
+        if (empty($queue_data['prompt_id'])) {
+            throw new Exception('No prompt ID in queue response: ' . $queue_body);
+        }
+
+        ai_blogpost_debug_log('ComfyUI prompt queued:', [
+            'prompt_id' => $queue_data['prompt_id']
+        ]);
 
         $prompt_id = $queue_data['prompt_id'];
         $start_time = time();
         $timeout = 300; // 5 minutes timeout
 
-        // Poll for completion
+        // Poll for completion with improved error handling
+        $poll_interval = 2; // seconds between polls
+        $polls = 0;
+        $max_polls = ceil($timeout / $poll_interval);
+
         while (time() - $start_time < $timeout) {
+            $polls++;
+            ai_blogpost_debug_log(sprintf(
+                'Polling ComfyUI history (attempt %d/%d):',
+                $polls,
+                $max_polls
+            ), ['prompt_id' => $prompt_id]);
+
             $history_response = wp_remote_get($api_url . '/history/' . $prompt_id, [
                 'timeout' => 30,
-                'sslverify' => false
+                'sslverify' => false,
+                'headers' => [
+                    'Accept' => 'application/json'
+                ]
             ]);
 
             if (is_wp_error($history_response)) {
                 throw new Exception('Failed to check history: ' . $history_response->get_error_message());
             }
 
-            $history_data = json_decode(wp_remote_retrieve_body($history_response), true);
+            $history_body = wp_remote_retrieve_body($history_response);
+            $history_data = json_decode($history_body, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new Exception('Invalid JSON in history response: ' . json_last_error_msg());
+            }
+
+            if (!empty($history_data['error'])) {
+                throw new Exception('Workflow error: ' . $history_data['error']);
+            }
             
             if (!empty($history_data['outputs'])) {
                 // Find the image output node
@@ -637,18 +834,65 @@ function fetch_comfyui_image_from_text($image_data) {
                 }
 
                 if ($image_data) {
-                    // Download the image
-                    $image_response = wp_remote_get($api_url . '/view?' . http_build_query([
+                    ai_blogpost_debug_log('ComfyUI image ready for download:', [
+                        'filename' => $image_data['filename'],
+                        'type' => $image_data['type']
+                    ]);
+
+                    // Prepare image download URL
+                    $image_url = $api_url . '/view?' . http_build_query([
                         'filename' => $image_data['filename'],
                         'subfolder' => $image_data['subfolder'] ?? '',
                         'type' => $image_data['type']
-                    ]), [
-                        'timeout' => 30,
-                        'sslverify' => false
                     ]);
 
-                    if (is_wp_error($image_response)) {
-                        throw new Exception('Failed to download image: ' . $image_response->get_error_message());
+                    // Download with retry logic
+                    $download_attempts = 3;
+                    $download_success = false;
+                    $last_download_error = null;
+
+                    for ($i = 1; $i <= $download_attempts; $i++) {
+                        try {
+                            $image_response = wp_remote_get($image_url, [
+                                'timeout' => 30,
+                                'sslverify' => false
+                            ]);
+
+                            if (is_wp_error($image_response)) {
+                                throw new Exception('Download failed: ' . $image_response->get_error_message());
+                            }
+
+                            $response_code = wp_remote_retrieve_response_code($image_response);
+                            if ($response_code !== 200) {
+                                throw new Exception('Invalid response code: ' . $response_code);
+                            }
+
+                            $image_data = wp_remote_retrieve_body($image_response);
+                            if (empty($image_data)) {
+                                throw new Exception('Empty image data received');
+                            }
+
+                            $download_success = true;
+                            break;
+
+                        } catch (Exception $e) {
+                            $last_download_error = $e;
+                            ai_blogpost_debug_log(sprintf(
+                                'Image download attempt %d/%d failed: %s',
+                                $i,
+                                $download_attempts,
+                                $e->getMessage()
+                            ));
+
+                            if ($i < $download_attempts) {
+                                sleep(2);
+                            }
+                        }
+                    }
+
+                    if (!$download_success) {
+                        throw new Exception('Failed to download image after ' . $download_attempts . ' attempts: ' . 
+                            ($last_download_error ? $last_download_error->getMessage() : 'Unknown error'));
                     }
 
                     // Save image
