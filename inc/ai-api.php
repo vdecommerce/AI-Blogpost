@@ -403,6 +403,81 @@ function fetch_dalle_image($image_data) {
  * @param array $image_data Image generation data
  * @return int|null Attachment ID or null on failure
  */
+/**
+ * Get or refresh ComfyUI client ID
+ * 
+ * @param string $api_url The ComfyUI API URL
+ * @param bool $force_refresh Whether to force a refresh of the client ID
+ * @return string Valid client ID
+ * @throws Exception if unable to get valid client ID
+ */
+function get_comfyui_client_id($api_url, $force_refresh = false) {
+    try {
+        $client_id = get_cached_option('ai_blogpost_comfyui_client_id');
+        
+        // Get new client ID if none exists, forced refresh, or validation fails
+        if (empty($client_id) || $force_refresh || !validate_comfyui_client_id($api_url, $client_id)) {
+            ai_blogpost_debug_log('Requesting new ComfyUI client ID');
+            
+            $response = wp_remote_get($api_url . '/client_id', [
+                'timeout' => 30,
+                'sslverify' => false
+            ]);
+
+            if (is_wp_error($response)) {
+                throw new Exception('Failed to get client ID: ' . $response->get_error_message());
+            }
+
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+            
+            if (empty($data['client_id'])) {
+                throw new Exception('Invalid client ID response from ComfyUI server');
+            }
+
+            $client_id = $data['client_id'];
+            update_option('ai_blogpost_comfyui_client_id', $client_id);
+            
+            ai_blogpost_debug_log('New client ID obtained:', $client_id);
+        }
+        
+        return $client_id;
+    } catch (Exception $e) {
+        ai_blogpost_debug_log('Error in get_comfyui_client_id:', $e->getMessage());
+        throw $e;
+    }
+}
+
+/**
+ * Validate ComfyUI client ID
+ * 
+ * @param string $api_url The ComfyUI API URL
+ * @param string $client_id The client ID to validate
+ * @return bool Whether the client ID is valid
+ */
+function validate_comfyui_client_id($api_url, $client_id) {
+    try {
+        // Try to get server status with client ID
+        $response = wp_remote_get($api_url . '/system_stats', [
+            'headers' => ['client_id' => $client_id],
+            'timeout' => 10,
+            'sslverify' => false
+        ]);
+
+        if (is_wp_error($response)) {
+            return false;
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        // If we get a valid response, client ID is still valid
+        return !empty($data) && is_array($data);
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
 function fetch_comfyui_image_from_text($image_data) {
     try {
         // Validate image data
@@ -411,16 +486,34 @@ function fetch_comfyui_image_from_text($image_data) {
         }
 
         $category = $image_data['category'];
-    $api_url = get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188');
-    // Ensure URL is properly formatted
-    $api_url = rtrim($api_url, '/');
-    if (!preg_match('/^https?:\/\//', $api_url)) {
-        $api_url = 'http://' . $api_url;
-    }
-        $client_id = get_cached_option('ai_blogpost_comfyui_client_id');
+        $api_url = get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188');
         
+        // Ensure URL is properly formatted
+        $api_url = rtrim($api_url, '/');
+        if (!preg_match('/^https?:\/\//', $api_url)) {
+            $api_url = 'http://' . $api_url;
+        }
+
+        // Get valid client ID with retry logic
+        $max_retries = 3;
+        $retry_count = 0;
+        $client_id = null;
+        
+        while ($retry_count < $max_retries) {
+            try {
+                $client_id = get_comfyui_client_id($api_url, $retry_count > 0);
+                break;
+            } catch (Exception $e) {
+                $retry_count++;
+                if ($retry_count >= $max_retries) {
+                    throw new Exception('Failed to obtain valid client ID after ' . $max_retries . ' attempts');
+                }
+                sleep(1); // Wait before retry
+            }
+        }
+
         if (empty($client_id)) {
-            throw new Exception('ComfyUI client ID not found');
+            throw new Exception('Unable to obtain valid ComfyUI client ID');
         }
 
         // Get workflow configuration
