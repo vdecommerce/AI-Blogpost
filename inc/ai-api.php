@@ -267,18 +267,20 @@ function fetch_dalle_image_from_text($image_data) {
         return fetch_comfyui_image_from_text($image_data);
     } elseif ($generation_type === 'dalle') {
         return fetch_dalle_image($image_data);
+    } elseif ($generation_type === 'localai') {
+        return fetch_localai_image($image_data);
     }
     
     return null;
 }
 
 /**
- * Fetch image using DALL-E
+ * Fetch image using LocalAI
  * 
  * @param array $image_data Image generation data
  * @return int|null Attachment ID or null on failure
  */
-function fetch_dalle_image($image_data) {
+function fetch_localai_image($image_data) {
     try {
         // Validate image data
         if (!is_array($image_data) || empty($image_data['category']) || empty($image_data['template'])) {
@@ -286,86 +288,67 @@ function fetch_dalle_image($image_data) {
         }
 
         $category = $image_data['category'];
+        $api_url = rtrim(get_cached_option('ai_blogpost_localai_api_url', 'http://localhost:8080'), '/');
 
-        // Prepare DALL-E prompt
-        $dalle_prompt = str_replace(
+        // Prepare LocalAI prompt
+        $prompt = str_replace(
             ['[category]', '[categorie]'],
             $category,
             $image_data['template']
         );
 
-        ai_blogpost_debug_log('DALL-E Prompt Data:', [
+        ai_blogpost_debug_log('LocalAI Prompt Data:', [
             'category' => $category,
-            'prompt' => $dalle_prompt
+            'prompt' => $prompt
         ]);
 
         // Initial log
         ai_blogpost_log_api_call('Image Generation', true, [
-            'prompt' => $dalle_prompt,
+            'type' => 'LocalAI',
+            'prompt' => $prompt,
             'category' => $category,
             'status' => 'Starting image generation'
         ]);
 
         // API request setup
-        $api_key = get_cached_option('ai_blogpost_dalle_api_key');
-        if (empty($api_key)) {
-            throw new Exception('DALL-E API key missing');
-        }
-
-        // Validate model and size compatibility
-        $model = get_cached_option('ai_blogpost_dalle_model', 'dall-e-3');
-        $size = get_cached_option('ai_blogpost_dalle_size', '1024x1024');
-        
-        // DALL-E 3 size validation
-        if ($model === 'dall-e-3' && !in_array($size, ['1024x1024', '1792x1024', '1024x1792'])) {
-            $size = '1024x1024'; // Default to supported size
-            ai_blogpost_debug_log('Adjusted size for DALL-E 3 compatibility:', $size);
-        }
-
         $payload = [
-            'model' => $model,
-            'prompt' => $dalle_prompt,
+            'prompt' => $prompt,
             'n' => 1,
-            'size' => $size
+            'size' => '1024x1024' // LocalAI default, can be made configurable
         ];
 
-        // DALL-E 3 specific options
-        if ($model === 'dall-e-3') {
-            $payload['quality'] = get_cached_option('ai_blogpost_dalle_quality', 'standard');
-            $payload['style'] = get_cached_option('ai_blogpost_dalle_style', 'vivid');
-        }
-
-        // Make API request
-        $response = wp_remote_post('https://api.openai.com/v1/images/generations', [
+        $response = wp_remote_post($api_url . '/v1/images/generations', [
             'headers' => [
-                'Authorization' => 'Bearer ' . $api_key,
-                'Content-Type' => 'application/json',
-                'OpenAI-Beta' => 'dall-e-3'
+                'Content-Type' => 'application/json'
             ],
             'body' => json_encode($payload),
-            'timeout' => 120 // Increased timeout for larger images
+            'timeout' => 120,
+            'sslverify' => false // Local setup may not have valid SSL
         ]);
 
         if (is_wp_error($response)) {
-            throw new Exception('API request failed: ' . $response->get_error_message());
+            throw new Exception('LocalAI API request failed: ' . $response->get_error_message());
         }
 
         $response_code = wp_remote_retrieve_response_code($response);
         $body = json_decode(wp_remote_retrieve_body($response), true);
 
         if ($response_code !== 200) {
-            $error_message = isset($body['error']['message']) ? $body['error']['message'] : 'Unknown API error';
-            throw new Exception('API error (' . $response_code . '): ' . $error_message);
+            $error_message = $body['error']['message'] ?? 'Unknown API error';
+            throw new Exception('LocalAI API error (' . $response_code . '): ' . $error_message);
         }
 
         if (empty($body['data'][0]['url'])) {
-            throw new Exception('No image URL in response');
+            throw new Exception('No image URL in LocalAI response');
         }
 
         // Download image from URL
         $image_url = $body['data'][0]['url'];
-        $image_response = wp_remote_get($image_url);
-        
+        $image_response = wp_remote_get($image_url, [
+            'timeout' => 30,
+            'sslverify' => false
+        ]);
+
         if (is_wp_error($image_response)) {
             throw new Exception('Failed to download image: ' . $image_response->get_error_message());
         }
@@ -375,7 +358,7 @@ function fetch_dalle_image($image_data) {
         }
 
         // Save image
-        $filename = 'dalle-' . sanitize_title($category) . '-' . time() . '.png';
+        $filename = 'localai-' . sanitize_title($category) . '-' . time() . '.png';
         $upload = wp_upload_bits($filename, null, wp_remote_retrieve_body($image_response));
         
         if (!empty($upload['error'])) {
@@ -401,33 +384,78 @@ function fetch_dalle_image($image_data) {
 
         // Log success
         ai_blogpost_log_api_call('Image Generation', true, [
-            'prompt' => $dalle_prompt,
+            'type' => 'LocalAI',
+            'prompt' => $prompt,
             'category' => $category,
             'image_id' => $attach_id,
-            'model' => $model,
-            'size' => $size,
             'status' => 'Image Generated Successfully'
         ]);
 
         return $attach_id;
 
     } catch (Exception $e) {
-        // Log error with detailed information
-        $error_data = [
+        ai_blogpost_log_api_call('Image Generation', false, [
+            'type' => 'LocalAI',
             'error' => $e->getMessage(),
-            'prompt' => $dalle_prompt ?? '',
             'category' => $category ?? 'unknown',
-            'model' => $model ?? 'unknown',
-            'size' => $size ?? 'unknown',
             'status' => 'Error: ' . $e->getMessage()
-        ];
-        
-        ai_blogpost_debug_log('DALL-E Error:', $error_data);
-        ai_blogpost_log_api_call('Image Generation', false, $error_data);
-        
+        ]);
         return null;
     }
 }
+
+/**
+ * Handle LocalAI connection test
+ */
+function handle_localai_test() {
+    check_ajax_referer('ai_blogpost_nonce', 'nonce');
+    
+    $api_url = sanitize_text_field($_POST['url']);
+    $api_url = rtrim($api_url, '/');
+    
+    try {
+        ai_blogpost_debug_log('Testing LocalAI connection:', [
+            'url' => $api_url
+        ]);
+
+        // Test connection with a simple request
+        $response = wp_remote_get($api_url . '/v1/models', [
+            'timeout' => 30,
+            'sslverify' => false
+        ]);
+
+        if (is_wp_error($response)) {
+            ai_blogpost_debug_log('LocalAI connection failed:', $response->get_error_message());
+            wp_send_json_error('Connection failed: ' . $response->get_error_message());
+            return;
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        if (empty($data['data'])) {
+            ai_blogpost_debug_log('Invalid LocalAI response:', $data);
+            wp_send_json_error('Invalid response from LocalAI server');
+            return;
+        }
+
+        ai_blogpost_log_api_call('LocalAI Test', true, [
+            'url' => $api_url,
+            'status' => 'Connection successful',
+            'models' => $data['data']
+        ]);
+
+        wp_send_json_success([
+            'message' => 'Connection successful',
+            'models' => $data['data']
+        ]);
+
+    } catch (Exception $e) {
+        ai_blogpost_debug_log('LocalAI error:', $e->getMessage());
+        wp_send_json_error('Error: ' . $e->getMessage());
+    }
+}
+add_action('wp_ajax_test_localai_connection', 'handle_localai_test');
 
 /**
  * Fetch image using ComfyUI
