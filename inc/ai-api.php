@@ -554,26 +554,14 @@ function fetch_comfyui_image_from_text($image_data) {
             $api_url = 'http://' . $api_url;
         }
 
-        // Get valid client ID with retry logic
-        $max_retries = 3;
-        $retry_count = 0;
-        $client_id = null;
-        
-        while ($retry_count < $max_retries) {
-            try {
-                $client_id = get_comfyui_client_id($api_url, $retry_count > 0);
-                break;
-            } catch (Exception $e) {
-                $retry_count++;
-                if ($retry_count >= $max_retries) {
-                    throw new Exception('Failed to obtain valid client ID after ' . $max_retries . ' attempts');
-                }
-                sleep(1); // Wait before retry
-            }
-        }
+        // Verify ComfyUI server is running
+        $status_response = wp_remote_get($api_url . '/system_stats', [
+            'timeout' => 10,
+            'sslverify' => false
+        ]);
 
-        if (empty($client_id)) {
-            throw new Exception('Unable to obtain valid ComfyUI client ID');
+        if (is_wp_error($status_response)) {
+            throw new Exception('ComfyUI server not running: ' . $status_response->get_error_message());
         }
 
         // Get workflow configuration
@@ -600,12 +588,16 @@ function fetch_comfyui_image_from_text($image_data) {
         // Replace prompt placeholder in workflow
         $workflow_data = $workflow_config['workflow'];
         foreach ($workflow_data['nodes'] as &$node) {
-            if (isset($node['inputs']) && isset($node['inputs']['text'])) {
-                $node['inputs']['text'] = str_replace(
-                    ['[category]', '[categorie]'],
-                    $category,
-                    $node['inputs']['text']
-                );
+            if (isset($node['widgets_values'])) {
+                foreach ($node['widgets_values'] as &$value) {
+                    if (is_string($value)) {
+                        $value = str_replace(
+                            ['[category]', '[categorie]'],
+                            $category,
+                            $value
+                        );
+                    }
+                }
             }
         }
 
@@ -620,10 +612,7 @@ function fetch_comfyui_image_from_text($image_data) {
         // Queue prompt
         $queue_response = wp_remote_post($api_url . '/prompt', [
             'headers' => ['Content-Type' => 'application/json'],
-            'body' => json_encode([
-                'prompt' => $workflow_data,
-                'client_id' => $client_id
-            ]),
+            'body' => json_encode(['prompt' => $workflow_data]),
             'timeout' => 30,
             'sslverify' => false
         ]);

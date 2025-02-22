@@ -88,9 +88,14 @@ function create_ai_blogpost() {
             ai_blogpost_debug_log('Starting image generation with type:', $generation_type);
             
             // Use the appropriate template based on generation type
-            $template_key = $generation_type === 'dalle' ? 'ai_blogpost_dalle_prompt_template' : 'ai_blogpost_comfyui_prompt_template';
-            $template = get_cached_option($template_key, 
-                'Create a professional blog header image about [category]. Style: Modern and professional.');
+            $template = '';
+            if ($generation_type === 'dalle') {
+                $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
+                    'Create a professional blog header image about [category]. Style: Modern and professional.');
+            } elseif ($generation_type === 'comfyui') {
+                // For ComfyUI, we use the workflow's built-in prompt template
+                $template = '[category]';
+            }
             
             // Create image data with category
             $image_data = array(

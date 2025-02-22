@@ -75,7 +75,7 @@
         "Node name for S&R": "CLIPTextEncode"
       },
       "widgets_values": [
-        "beautiful scenery nature glass bottle landscape, , purple galaxy bottle,"
+        "[category]"
       ]
     },
     {
@@ -236,7 +236,7 @@
       "outputs": [],
       "properties": {},
       "widgets_values": [
-        "ComfyUI"
+        "[category]_%timestamp%"
       ]
     },
     {
