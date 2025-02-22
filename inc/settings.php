@@ -400,75 +400,90 @@ function display_text_settings() {
  */
 // In display_image_settings() function
 function display_image_settings() {
-    echo '<table class="form-table">';
+    echo '<div class="settings-section">';
+    echo '<h2>Featured Image Generation</h2>';
     
-    // Image Generation Type
-    echo '<tr>';
-    echo '<th><label>Image Generation Type</label></th>';
-    echo '<td>';
-    $generation_type = get_cached_option('ai_blogpost_image_generation_type', 'none');
-    echo '<div class="image-generation-type">';
-    echo '<label><input type="radio" name="ai_blogpost_image_generation_type" value="none" ' . checked($generation_type, 'none', false) . '> None</label><br>';
-    echo '<label><input type="radio" name="ai_blogpost_image_generation_type" value="dalle" ' . checked($generation_type, 'dalle', false) . '> DALL-E</label><br>';
-    echo '<label><input type="radio" name="ai_blogpost_image_generation_type" value="comfyui" ' . checked($generation_type, 'comfyui', false) . '> ComfyUI</label><br>';
-    echo '<label><input type="radio" name="ai_blogpost_image_generation_type" value="localai" ' . checked($generation_type, 'localai', false) . '> LocalAI</label>';
+    // Image Generation Type with improved styling
+    echo '<div class="image-generation-selector" style="margin-bottom: 20px;">';
+    $generation_type = get_cached_option('ai_blogpost_image_generation_type', 'dalle');
+    echo '<div class="generation-type-options" style="display: flex; gap: 20px;">';
+    
+    // DALL-E Option
+    echo '<div class="generation-option" style="flex: 1; padding: 15px; border: 1px solid #ccc; border-radius: 5px; ' . 
+         ($generation_type === 'dalle' ? 'background: #f0f7ff; border-color: #2271b1;' : '') . '">';
+    echo '<label style="display: block; margin-bottom: 10px;">';
+    echo '<input type="radio" name="ai_blogpost_image_generation_type" value="dalle" ' . 
+         checked($generation_type, 'dalle', false) . ' style="margin-right: 8px;">';
+    echo '<strong>DALL-E</strong></label>';
+    echo '<p class="description" style="margin: 0;">Use OpenAI\'s DALL-E for AI image generation</p>';
     echo '</div>';
-    echo '<p class="description">Select which system to use for image generation</p>';
-    echo '</td>';
-    echo '</tr>';
+    
+    // ComfyUI Option
+    echo '<div class="generation-option" style="flex: 1; padding: 15px; border: 1px solid #ccc; border-radius: 5px; ' . 
+         ($generation_type === 'comfyui' ? 'background: #f0f7ff; border-color: #2271b1;' : '') . '">';
+    echo '<label style="display: block; margin-bottom: 10px;">';
+    echo '<input type="radio" name="ai_blogpost_image_generation_type" value="comfyui" ' . 
+         checked($generation_type, 'comfyui', false) . ' style="margin-right: 8px;">';
+    echo '<strong>ComfyUI</strong></label>';
+    echo '<p class="description" style="margin: 0;">Use local ComfyUI for advanced image generation</p>';
+    echo '</div>';
+    
+    echo '</div>'; // Close generation-type-options
+    echo '</div>'; // Close image-generation-selector
 
-    // Existing DALL-E section unchanged...
-
-    // Existing ComfyUI section unchanged...
-
-    // LocalAI Section
-    echo '<div class="localai-settings" style="display: ' . ($generation_type === 'localai' ? 'block' : 'none') . ';">';
-    echo '<h3>LocalAI Settings</h3>';
+    // DALL-E Settings
+    echo '<div class="dalle-settings" style="display: ' . ($generation_type === 'dalle' ? 'block' : 'none') . ';">';
+    echo '<h3 style="margin-top: 0;">DALL-E Settings</h3>';
     echo '<table class="form-table">';
     
-    // LocalAI API URL
+    // DALL-E API Key
     echo '<tr>';
-    echo '<th><label for="ai_blogpost_localai_api_url">LocalAI API URL</label></th>';
+    echo '<th><label for="ai_blogpost_dalle_api_key">API Key</label></th>';
     echo '<td>';
-    $localai_url = get_cached_option('ai_blogpost_localai_api_url', 'http://localhost:8080');
-    echo '<input type="url" name="ai_blogpost_localai_api_url" id="ai_blogpost_localai_api_url" class="regular-text" value="' . 
-         esc_attr($localai_url) . '">';
-    echo '<button type="button" class="button test-localai-connection">Test Connection</button>';
-    echo '<span class="spinner" style="float: none; margin-left: 4px;"></span>';
-    echo '<p class="description">Default: http://localhost:8080 (adjust based on your LocalAI setup)</p>';
+    echo '<input type="password" name="ai_blogpost_dalle_api_key" id="ai_blogpost_dalle_api_key" class="regular-text" value="' . 
+         esc_attr(get_cached_option('ai_blogpost_dalle_api_key')) . '">';
+    echo '<p class="description">Your OpenAI API key for DALL-E image generation</p>';
     echo '</td>';
     echo '</tr>';
 
-    // LocalAI Prompt Template
+    // DALL-E Model
     echo '<tr>';
-    echo '<th><label for="ai_blogpost_localai_prompt_template">Prompt Template</label></th>';
+    echo '<th><label for="ai_blogpost_dalle_model">Model</label></th>';
     echo '<td>';
-    echo '<textarea name="ai_blogpost_localai_prompt_template" id="ai_blogpost_localai_prompt_template" rows="3" class="large-text code">';
-    echo esc_textarea(get_cached_option('ai_blogpost_localai_prompt_template', 
+    display_model_dropdown('dalle');
+    echo '</td>';
+    echo '</tr>';
+
+    // DALL-E Prompt Template
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_dalle_prompt_template">Prompt Template</label></th>';
+    echo '<td>';
+    echo '<textarea name="ai_blogpost_dalle_prompt_template" id="ai_blogpost_dalle_prompt_template" rows="3" class="large-text code">';
+    echo esc_textarea(get_cached_option('ai_blogpost_dalle_prompt_template', 
         'A professional blog header image for [category], modern style, clean design, subtle symbolism'));
     echo '</textarea>';
-    echo '<p class="description">Use [category] as placeholder for the blog category.</p>';
+    echo '<p class="description">Use [category] as placeholder for the blog category</p>';
     echo '</td>';
     echo '</tr>';
 
     echo '</table>';
-    echo '</div>';
+    echo '</div>'; // Close dalle-settings
 
-    // ComfyUI Section
+    // ComfyUI Settings
     echo '<div class="comfyui-settings" style="display: ' . ($generation_type === 'comfyui' ? 'block' : 'none') . ';">';
-    echo '<h3>ComfyUI Settings</h3>';
+    echo '<h3 style="margin-top: 0;">ComfyUI Settings</h3>';
     echo '<table class="form-table">';
     
     // ComfyUI API URL
     echo '<tr>';
-    echo '<th><label for="ai_blogpost_comfyui_api_url">ComfyUI API URL</label></th>';
+    echo '<th><label for="ai_blogpost_comfyui_api_url">Server URL</label></th>';
     echo '<td>';
     $comfyui_url = get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188');
     echo '<input type="url" name="ai_blogpost_comfyui_api_url" id="ai_blogpost_comfyui_api_url" class="regular-text" value="' . 
          esc_attr($comfyui_url) . '">';
     echo '<button type="button" class="button test-comfyui-connection">Test Connection</button>';
     echo '<span class="spinner" style="float: none; margin-left: 4px;"></span>';
-    echo '<p class="description">Default: http://localhost:8188</p>';
+    echo '<p class="description">Usually http://localhost:8188</p>';
     echo '</td>';
     echo '</tr>';
 
@@ -484,65 +499,105 @@ function display_image_settings() {
 
     // Display available workflows
     echo '<tr>';
-    echo '<th><label for="ai_blogpost_comfyui_default_workflow">Default Workflow</label></th>';
+    echo '<th><label for="ai_blogpost_comfyui_default_workflow">Workflow</label></th>';
     echo '<td>';
-    echo '<select name="ai_blogpost_comfyui_default_workflow" id="ai_blogpost_comfyui_default_workflow">';
+    echo '<select name="ai_blogpost_comfyui_default_workflow" id="ai_blogpost_comfyui_default_workflow" style="margin-bottom: 10px; width: 100%;">';
     foreach ($workflows as $workflow) {
         echo '<option value="' . esc_attr($workflow['name']) . '" ' . 
              selected($default_workflow, $workflow['name'], false) . '>' . 
              esc_html($workflow['name'] . ' - ' . $workflow['description']) . '</option>';
     }
     echo '</select>';
-    echo '<p class="description">Select the default workflow to use for image generation</p>';
+    
+    // Add workflow preview section
+    echo '<div class="workflow-preview" style="margin-top: 15px; padding: 15px; background: #f8f9fa; border: 1px solid #e2e4e7; border-radius: 4px;">';
+    echo '<h4 style="margin-top: 0;">Workflow Details</h4>';
+    echo '<ul style="margin: 10px 0 0 20px; list-style-type: disc;">';
+    echo '<li>Input: Category-based prompt with customizable style</li>';
+    echo '<li>Processing: Advanced image generation pipeline</li>';
+    echo '<li>Output: High-quality 512x512 featured image</li>';
+    echo '</ul>';
+    echo '</div>';
+    
     echo '</td>';
     echo '</tr>';
 
     echo '</table>';
-    echo '</div>';
+    echo '</div>'; // Close comfyui-settings
+    
+    echo '</div>'; // Close settings-section
 
     // Updated JavaScript for toggling sections
     ?>
     <script>
     jQuery(document).ready(function($) {
+        // Add transition styles
+        $('<style>')
+            .text(`
+                .generation-option {
+                    transition: all 0.3s ease;
+                    cursor: pointer;
+                }
+                .generation-option:hover {
+                    background: #f0f7ff;
+                    border-color: #2271b1;
+                }
+                .dalle-settings, .comfyui-settings {
+                    transition: opacity 0.3s ease;
+                }
+            `)
+            .appendTo('head');
+
+        // Handle generation type selection
         $('input[name="ai_blogpost_image_generation_type"]').change(function() {
             var type = $(this).val();
-            $('.dalle-settings').toggle(type === 'dalle');
-            $('.comfyui-settings').toggle(type === 'comfyui');
-            $('.localai-settings').toggle(type === 'localai');
-        });
-
-        // Test LocalAI connection
-        $('.test-localai-connection').click(function() {
-            var $button = $(this);
-            var $spinner = $button.next('.spinner');
-            var apiUrl = $('#ai_blogpost_localai_api_url').val();
             
-            $button.prop('disabled', true);
-            $spinner.addClass('is-active');
-            
-            $.post(ajaxurl, {
-                action: 'test_localai_connection',
-                url: apiUrl,
-                nonce: '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>'
-            }, function(response) {
-                if (response.success) {
-                    alert('LocalAI connection successful!');
-                } else {
-                    alert('LocalAI connection failed: ' + response.data);
-                }
-            }).fail(function() {
-                alert('Connection test failed. Please check the API URL.');
-            }).always(function() {
-                $button.prop('disabled', false);
-                $spinner.removeClass('is-active');
+            // Update option styling
+            $('.generation-option').css({
+                'background': 'none',
+                'border-color': '#ccc'
             });
+            $(this).closest('.generation-option').css({
+                'background': '#f0f7ff',
+                'border-color': '#2271b1'
+            });
+
+            // Smooth transition between settings panels
+            if (type === 'dalle') {
+                $('.comfyui-settings').css('opacity', 0).hide();
+                $('.dalle-settings').css('opacity', 0).show().animate({opacity: 1}, 300);
+            } else if (type === 'comfyui') {
+                $('.dalle-settings').css('opacity', 0).hide();
+                $('.comfyui-settings').css('opacity', 0).show().animate({opacity: 1}, 300);
+            }
         });
 
-        // Test ComfyUI connection
+        // Make entire option box clickable
+        $('.generation-option').click(function() {
+            $(this).find('input[type="radio"]').prop('checked', true).trigger('change');
+        });
+
+
+        // Enhanced connection test handling
         $('.test-comfyui-connection').click(function() {
             var $button = $(this);
             var $spinner = $button.next('.spinner');
             var apiUrl = $('#ai_blogpost_comfyui_api_url').val();
+            
+            // Create notification element
+            var $notification = $('<div>')
+                .css({
+                    'position': 'fixed',
+                    'top': '20px',
+                    'right': '20px',
+                    'padding': '10px 20px',
+                    'border-radius': '4px',
+                    'background': '#fff',
+                    'box-shadow': '0 2px 5px rgba(0,0,0,0.2)',
+                    'z-index': 9999,
+                    'display': 'none'
+                })
+                .appendTo('body');
             
             $button.prop('disabled', true);
             $spinner.addClass('is-active');
@@ -553,12 +608,27 @@ function display_image_settings() {
                 nonce: '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>'
             }, function(response) {
                 if (response.success) {
-                    alert('ComfyUI connection successful! Client ID: ' + response.data.client_id);
+                    $notification
+                        .html('✅ ComfyUI connected successfully!')
+                        .css('background', '#e7f5ea')
+                        .fadeIn()
+                        .delay(3000)
+                        .fadeOut(function() { $(this).remove(); });
                 } else {
-                    alert('ComfyUI connection failed: ' + response.data);
+                    $notification
+                        .html('❌ ' + response.data)
+                        .css('background', '#fde8e8')
+                        .fadeIn()
+                        .delay(3000)
+                        .fadeOut(function() { $(this).remove(); });
                 }
             }).fail(function() {
-                alert('Connection test failed. Please check the API URL.');
+                $notification
+                    .html('❌ Connection failed. Please check the server URL.')
+                    .css('background', '#fde8e8')
+                    .fadeIn()
+                    .delay(3000)
+                    .fadeOut(function() { $(this).remove(); });
             }).always(function() {
                 $button.prop('disabled', false);
                 $spinner.removeClass('is-active');
