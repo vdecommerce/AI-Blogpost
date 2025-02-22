@@ -75,7 +75,7 @@
         "Node name for S&R": "CLIPTextEncode"
       },
       "widgets_values": [
-        "[category]"
+        "beautiful scenery nature glass bottle landscape, , purple galaxy bottle,"
       ]
     },
     {
@@ -162,7 +162,7 @@
         "Node name for S&R": "KSampler"
       },
       "widgets_values": [
-        446041887563061,
+        331419107639081,
         "randomize",
         20,
         8,
@@ -236,7 +236,7 @@
       "outputs": [],
       "properties": {},
       "widgets_values": [
-        "[category]_%timestamp%"
+        "ComfyUI"
       ]
     },
     {
@@ -369,10 +369,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.6830134553650707,
+      "scale": 1.1000000000000005,
       "offset": [
-        28.970056165289314,
-        294.63354232765334
+        -1013.7967792892565,
+        -110.57123130871037
       ]
     }
   },

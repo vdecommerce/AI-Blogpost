@@ -8,30 +8,21 @@
         "last_link_id": 9,
         "nodes": [
           {
-            "id": 7,
-            "class_type": "CLIPTextEncode",
-            "pos": [413, 389],
-            "size": [425.27801513671875, 180.6060791015625],
+            "id": 4,
+            "class_type": "CheckpointLoaderSimple",
+            "pos": [-13, 424],
+            "size": [315, 98],
             "flags": {},
-            "order": 3,
+            "order": 1,
             "mode": 0,
-            "inputs": [{"name": "clip", "type": "CLIP", "link": 5}],
-            "outputs": [{"name": "CONDITIONING", "type": "CONDITIONING", "links": [6], "slot_index": 0}],
-            "properties": {"Node name for S&R": "CLIPTextEncode"},
-            "widgets_values": ["text, watermark"]
-          },
-          {
-            "id": 6,
-            "class_type": "CLIPTextEncode",
-            "pos": [415, 186],
-            "size": [422.84503173828125, 164.31304931640625],
-            "flags": {},
-            "order": 2,
-            "mode": 0,
-            "inputs": [{"name": "clip", "type": "CLIP", "link": 3}],
-            "outputs": [{"name": "CONDITIONING", "type": "CONDITIONING", "links": [4], "slot_index": 0}],
-            "properties": {"Node name for S&R": "CLIPTextEncode"},
-            "widgets_values": ["A professional blog header image about [category], modern style, clean design"]
+            "inputs": [],
+            "outputs": [
+              {"name": "MODEL", "type": "MODEL", "links": [1], "slot_index": 0},
+              {"name": "CLIP", "type": "CLIP", "links": [3, 5], "slot_index": 1},
+              {"name": "VAE", "type": "VAE", "links": [8], "slot_index": 2}
+            ],
+            "properties": {"Node name for S&R": "CheckpointLoaderSimple"},
+            "widgets_values": ["v1-5-pruned-emaonly-fp16.safetensors"]
           },
           {
             "id": 5,
@@ -45,6 +36,32 @@
             "outputs": [{"name": "LATENT", "type": "LATENT", "links": [2], "slot_index": 0}],
             "properties": {"Node name for S&R": "EmptyLatentImage"},
             "widgets_values": [512, 512, 1]
+          },
+          {
+            "id": 6,
+            "class_type": "CLIPTextEncode",
+            "pos": [415, 186],
+            "size": [423, 164],
+            "flags": {},
+            "order": 2,
+            "mode": 0,
+            "inputs": [{"name": "clip", "type": "CLIP", "link": 3}],
+            "outputs": [{"name": "CONDITIONING", "type": "CONDITIONING", "links": [4], "slot_index": 0}],
+            "properties": {"Node name for S&R": "CLIPTextEncode"},
+            "widgets_values": ["A professional blog header image about [category], modern style, clean design"]
+          },
+          {
+            "id": 7,
+            "class_type": "CLIPTextEncode",
+            "pos": [413, 389],
+            "size": [425, 181],
+            "flags": {},
+            "order": 3,
+            "mode": 0,
+            "inputs": [{"name": "clip", "type": "CLIP", "link": 5}],
+            "outputs": [{"name": "CONDITIONING", "type": "CONDITIONING", "links": [6], "slot_index": 0}],
+            "properties": {"Node name for S&R": "CLIPTextEncode"},
+            "widgets_values": ["text, watermark"]
           },
           {
             "id": 3,
@@ -77,8 +94,7 @@
               {"name": "vae", "type": "VAE", "link": 8}
             ],
             "outputs": [{"name": "IMAGE", "type": "IMAGE", "links": [9], "slot_index": 0}],
-            "properties": {"Node name for S&R": "VAEDecode"},
-            "widgets_values": []
+            "properties": {"Node name for S&R": "VAEDecode"}
           },
           {
             "id": 9,
@@ -92,23 +108,6 @@
             "outputs": [],
             "properties": {},
             "widgets_values": ["[category]_%timestamp%"]
-          },
-          {
-            "id": 4,
-            "class_type": "CheckpointLoaderSimple",
-            "pos": [-12.842978477478027, 424.4132080078125],
-            "size": [315, 98],
-            "flags": {"collapsed": false},
-            "order": 1,
-            "mode": 0,
-            "inputs": [],
-            "outputs": [
-              {"name": "MODEL", "type": "MODEL", "links": [1], "slot_index": 0},
-              {"name": "CLIP", "type": "CLIP", "links": [3, 5], "slot_index": 1},
-              {"name": "VAE", "type": "VAE", "links": [8], "slot_index": 2}
-            ],
-            "properties": {"Node name for S&R": "CheckpointLoaderSimple"},
-            "widgets_values": ["v1-5-pruned-emaonly-fp16.safetensors"]
           }
         ],
         "links": [
