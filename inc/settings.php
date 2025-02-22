@@ -807,8 +807,8 @@ function handle_comfyui_test() {
             'url' => $api_url
         ]);
 
-        // Test connection to client_id endpoint
-        $response = wp_remote_get($api_url . '/client_id', [
+        // Test connection to queue endpoint
+        $response = wp_remote_get($api_url . '/queue', [
             'timeout' => 30,
             'sslverify' => false
         ]);
@@ -819,28 +819,36 @@ function handle_comfyui_test() {
             return;
         }
 
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
+        $queue_data = json_decode(wp_remote_retrieve_body($response), true);
         
-        if (empty($data['client_id'])) {
-            ai_blogpost_debug_log('Invalid ComfyUI response:', $data);
-            wp_send_json_error('Invalid response from ComfyUI server');
+        // Test connection to history endpoint
+        $history_response = wp_remote_get($api_url . '/history', [
+            'timeout' => 30,
+            'sslverify' => false
+        ]);
+
+        if (is_wp_error($history_response)) {
+            ai_blogpost_debug_log('ComfyUI history endpoint failed:', $history_response->get_error_message());
+            wp_send_json_error('Failed to access history endpoint');
             return;
         }
 
-        // Store the client ID for future use
-        update_option('ai_blogpost_comfyui_client_id', $data['client_id']);
+        $history_data = json_decode(wp_remote_retrieve_body($history_response), true);
+        
+        // If we can access both endpoints, the server is running properly
         update_option('ai_blogpost_comfyui_api_url', $api_url);
         
         ai_blogpost_log_api_call('ComfyUI Test', true, [
             'url' => $api_url,
             'status' => 'Connection successful',
-            'client_id' => $data['client_id']
+            'queue_status' => $queue_data,
+            'history_available' => !empty($history_data)
         ]);
 
         wp_send_json_success([
             'message' => 'Connection successful',
-            'client_id' => $data['client_id']
+            'queue_status' => $queue_data,
+            'history_available' => !empty($history_data)
         ]);
 
     } catch (Exception $e) {
