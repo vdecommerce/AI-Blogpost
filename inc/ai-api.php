@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
 function fetch_ai_response($post_data) {
     try {
         $api_key = get_cached_option('ai_blogpost_api_key');
-        if (empty($api_key)) {
+        if (empty($api_key) && !get_cached_option('ai_blogpost_openrouter_enabled', 0) && !get_cached_option('ai_blogpost_lm_enabled', 0)) {
             throw new Exception('API key is missing');
         }
 
@@ -60,64 +60,23 @@ function fetch_ai_response($post_data) {
 function prepare_ai_prompt($post_data) {
     try {
         $language = get_option('ai_blogpost_language', 'en');
-        
+        $system_role = get_cached_option('ai_blogpost_role', 'You are a professional blog writer. Write engaging, SEO-friendly content about the given topic.');
+        $content_template = get_cached_option('ai_blogpost_prompt', "Write a blog post about [topic]. Structure the content as follows:\n\n||Title||: Create an engaging, SEO-friendly title\n\n||Content||: Write the main content here, using proper HTML structure:\n- Use <article> tags to wrap the content\n- Use <h1>, <h2> for headings\n- Use <p> for paragraphs\n- Include relevant subheadings\n- Add a strong conclusion\n\n||Category||: Suggest the most appropriate category for this post");
+
         $system_messages = [
-            [
-                "role" => "system",
-                "content" => get_language_instruction($language)
-            ],
-            [
-                "role" => "system",
-                "content" => "You are a professional SEO content writer. 
-                Structure your response exactly as follows:
-
-                ||Title||: Write an SEO-optimized title here
-
-                ||Content||: 
-                <article>
-                    <h1>Main title (same as above)</h1>
-                    <p>Introduction paragraph</p>
-
-                    <h2>First Section</h2>
-                    <p>Content for first section</p>
-
-                    <h2>Second Section</h2>
-                    <p>Content for second section</p>
-
-                    <!-- Add more sections as needed -->
-
-                    <h2>Conclusion</h2>
-                    <p>Concluding thoughts</p>
-                </article>
-
-                ||Category||: Category name"
-            ]
+            ["role" => "system", "content" => get_language_instruction($language)],
+            ["role" => "system", "content" => $system_role]
         ];
 
-        $user_prompt = "Write a professional blog post about [topic].
-
-Requirements:
-1. Create an SEO-optimized title that includes '[topic]'
-2. Write well-structured content with proper HTML tags
-3. Use h1 for main title, h2 for sections
-4. Include relevant keywords naturally
-5. Write engaging, informative paragraphs
-6. Add a strong conclusion
-7. Follow the exact structure shown above";
+        $user_prompt = str_replace('[topic]', $post_data['category'], $content_template);
 
         $messages = array_merge(
             $system_messages,
-            [
-                [
-                    "role" => "user",
-                    "content" => str_replace('[topic]', $post_data['category'], $user_prompt)
-                ]
-            ]
+            [["role" => "user", "content" => $user_prompt]]
         );
         
         ai_blogpost_debug_log('Prepared messages:', $messages);
         return $messages;
-        
     } catch (Exception $e) {
         ai_blogpost_debug_log('Error in prepare_ai_prompt:', $e->getMessage());
         throw $e;
@@ -125,34 +84,50 @@ Requirements:
 }
 
 /**
- * Send request to OpenAI API
+ * Send request to OpenAI, OpenRouter, or LM Studio API
  * 
  * @param array $messages Array of message objects
  * @return array API response
  */
 function send_ai_request($messages) {
     try {
-        if (get_cached_option('ai_blogpost_lm_enabled', 0)) {
+        $temperature = (float)get_cached_option('ai_blogpost_temperature', 0.7);
+        $max_tokens = min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096);
+
+        if (get_cached_option('ai_blogpost_openrouter_enabled', 0)) {
+            $args = array(
+                'body' => json_encode(array(
+                    'model' => get_cached_option('ai_blogpost_openrouter_model', 'openai/gpt-4'),
+                    'messages' => $messages,
+                    'temperature' => $temperature,
+                    'max_tokens' => $max_tokens
+                )),
+                'headers' => array(
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer ' . get_cached_option('ai_blogpost_openrouter_api_key')
+                ),
+                'timeout' => 90
+            );
+            $response = wp_remote_post('https://openrouter.ai/api/v1/chat/completions', $args);
+        } elseif (get_cached_option('ai_blogpost_lm_enabled', 0)) {
             return send_lm_studio_request($messages);
+        } else {
+            $args = array(
+                'body' => json_encode(array(
+                    'model' => get_option('ai_blogpost_model', 'gpt-4'),
+                    'messages' => $messages,
+                    'temperature' => $temperature,
+                    'max_tokens' => $max_tokens
+                )),
+                'headers' => array(
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer ' . get_option('ai_blogpost_api_key')
+                ),
+                'timeout' => 90
+            );
+            $response = wp_remote_post('https://api.openai.com/v1/chat/completions', $args);
         }
 
-        $args = array(
-            'body' => json_encode(array(
-                'model' => get_option('ai_blogpost_model', 'gpt-4'),
-                'messages' => $messages,
-                'temperature' => (float)get_option('ai_blogpost_temperature', 0.7),
-                'max_tokens' => min((int)get_option('ai_blogpost_max_tokens', 2048), 4096)
-            )),
-            'headers' => array(
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . get_option('ai_blogpost_api_key')
-            ),
-            'timeout' => 90
-        );
-
-        ai_blogpost_debug_log('Sending API request');
-        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', $args);
-        
         if (is_wp_error($response)) {
             throw new Exception('API request failed: ' . $response->get_error_message());
         }
@@ -196,7 +171,7 @@ function send_lm_studio_request($messages) {
                 'model' => get_cached_option('ai_blogpost_lm_model', 'model.gguf'),
                 'prompt' => $prompt,
                 'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
-                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096), // Consistentie met OpenAI
+                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096),
                 'stream' => false
             )),
             'headers' => array(
@@ -240,7 +215,7 @@ function send_lm_studio_request($messages) {
 }
 
 /**
- * Fetch DALL·E image based on text content
+ * Fetch image based on text content
  * 
  * @param array $image_data Image generation data
  * @return int|null Attachment ID or null on failure
@@ -251,12 +226,132 @@ function fetch_dalle_image_from_text($image_data) {
     if ($generation_type === 'comfyui') {
         return fetch_comfyui_image_from_text($image_data);
     } elseif ($generation_type === 'dalle') {
-        return fetch_dalle_image($image_data); // Aanname: deze functie bestaat elders
+        return fetch_dalle_image($image_data);
     } elseif ($generation_type === 'localai') {
         return fetch_localai_image($image_data);
     }
     
     return null;
+}
+
+/**
+ * Fetch image using DALL·E
+ * 
+ * @param array $image_data Image generation data
+ * @return int|null Attachment ID or null on failure
+ */
+function fetch_dalle_image($image_data) {
+    try {
+        if (!is_array($image_data) || empty($image_data['category']) || empty($image_data['template'])) {
+            throw new Exception('Invalid image data structure');
+        }
+
+        $category = $image_data['category'];
+        $api_key = get_cached_option('ai_blogpost_dalle_api_key');
+        if (empty($api_key)) {
+            throw new Exception('DALL·E API key is missing');
+        }
+
+        $prompt = str_replace(['[category]', '[categorie]'], $category, $image_data['template']);
+
+        ai_blogpost_debug_log('DALL·E Prompt Data:', [
+            'category' => $category,
+            'prompt' => $prompt
+        ]);
+
+        ai_blogpost_log_api_call('Image Generation', true, [
+            'type' => 'DALL·E',
+            'prompt' => $prompt,
+            'category' => $category,
+            'status' => 'Starting image generation'
+        ]);
+
+        $payload = [
+            'model' => get_cached_option('ai_blogpost_dalle_model', 'dall-e-3'),
+            'prompt' => $prompt,
+            'n' => 1,
+            'size' => get_cached_option('ai_blogpost_dalle_size', '1024x1024'),
+            'style' => get_cached_option('ai_blogpost_dalle_style', 'vivid'),
+            'quality' => get_cached_option('ai_blogpost_dalle_quality', 'standard')
+        ];
+
+        $response = wp_remote_post('https://api.openai.com/v1/images/generations', [
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . $api_key
+            ],
+            'body' => json_encode($payload),
+            'timeout' => 60
+        ]);
+
+        if (is_wp_error($response)) {
+            throw new Exception('DALL·E API request failed: ' . $response->get_error_message());
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($response_code !== 200) {
+            $error_message = $body['error']['message'] ?? 'Unknown API error';
+            throw new Exception('DALL·E API error (' . $response_code . '): ' . $error_message);
+        }
+
+        if (empty($body['data'][0]['url'])) {
+            throw new Exception('No image URL in DALL·E response');
+        }
+
+        $image_url = $body['data'][0]['url'];
+        $image_response = wp_remote_get($image_url, ['timeout' => 30]);
+
+        if (is_wp_error($image_response)) {
+            throw new Exception('Failed to download image: ' . $image_response->get_error_message());
+        }
+
+        if (wp_remote_retrieve_response_code($image_response) !== 200) {
+            throw new Exception('Failed to download image: Invalid response code');
+        }
+
+        $filename = 'dalle-' . sanitize_title($category) . '-' . time() . '.png';
+        $upload = wp_upload_bits($filename, null, wp_remote_retrieve_body($image_response));
+        
+        if (!empty($upload['error'])) {
+            throw new Exception('Failed to save image: ' . $upload['error']);
+        }
+
+        $attachment = [
+            'post_mime_type' => wp_check_filetype($filename)['type'],
+            'post_title' => sanitize_file_name($filename),
+            'post_content' => '',
+            'post_status' => 'inherit'
+        ];
+
+        $attach_id = wp_insert_attachment($attachment, $upload['file']);
+        if (is_wp_error($attach_id)) {
+            throw new Exception('Failed to create attachment: ' . $attach_id->get_error_message());
+        }
+
+        require_once(ABSPATH . 'wp-admin/includes/image.php');
+        $attach_data = wp_generate_attachment_metadata($attach_id, $upload['file']);
+        wp_update_attachment_metadata($attach_id, $attach_data);
+
+        ai_blogpost_log_api_call('Image Generation', true, [
+            'type' => 'DALL·E',
+            'prompt' => $prompt,
+            'category' => $category,
+            'image_id' => $attach_id,
+            'status' => 'Image Generated Successfully'
+        ]);
+
+        return $attach_id;
+    } catch (Exception $e) {
+        ai_blogpost_log_api_call('Image Generation', false, [
+            'type' => 'DALL·E',
+            'error' => $e->getMessage(),
+            'category' => $category ?? 'unknown',
+            'status' => 'Error: ' . $e->getMessage()
+        ]);
+        return null;
+    }
 }
 
 /**
@@ -273,16 +368,13 @@ function fetch_localai_image($image_data) {
 
         $category = $image_data['category'];
         $api_url = rtrim(get_cached_option('ai_blogpost_localai_api_url', 'http://localhost:8080'), '/');
-
-        $prompt = str_replace(
-            ['[category]', '[categorie]'],
-            $category,
-            $image_data['template']
-        );
+        $prompt = str_replace(['[category]', '[categorie]'], $category, $image_data['template']);
+        $size = get_cached_option('ai_blogpost_localai_size', '1024x1024');
 
         ai_blogpost_debug_log('LocalAI Prompt Data:', [
             'category' => $category,
-            'prompt' => $prompt
+            'prompt' => $prompt,
+            'size' => $size
         ]);
 
         ai_blogpost_log_api_call('Image Generation', true, [
@@ -295,7 +387,7 @@ function fetch_localai_image($image_data) {
         $payload = [
             'prompt' => $prompt,
             'n' => 1,
-            'size' => get_cached_option('ai_blogpost_localai_size', '1024x1024') // Configureerbaar maken
+            'size' => $size
         ];
 
         $response = wp_remote_post($api_url . '/v1/images/generations', [
@@ -390,9 +482,7 @@ function handle_localai_test() {
     $api_url = rtrim($api_url, '/');
     
     try {
-        ai_blogpost_debug_log('Testing LocalAI connection:', [
-            'url' => $api_url
-        ]);
+        ai_blogpost_debug_log('Testing LocalAI connection:', ['url' => $api_url]);
 
         $response = wp_remote_get($api_url . '/v1/models', [
             'timeout' => 30,
@@ -753,3 +843,127 @@ function fetch_openai_models() {
         return false;
     }
 }
+
+/**
+ * Handle ComfyUI connection test
+ */
+function handle_comfyui_test() {
+    check_ajax_referer('ai_blogpost_nonce', 'nonce');
+    
+    $api_url = sanitize_text_field($_POST['url']);
+    $api_url = rtrim($api_url, '/');
+    
+    try {
+        ai_blogpost_debug_log('Testing ComfyUI connection:', ['url' => $api_url]);
+
+        $response = wp_remote_get($api_url . '/queue', [
+            'timeout' => 30,
+            'sslverify' => false
+        ]);
+
+        if (is_wp_error($response)) {
+            ai_blogpost_debug_log('ComfyUI connection failed:', $response->get_error_message());
+            wp_send_json_error('Connection failed: ' . $response->get_error_message());
+            return;
+        }
+
+        $queue_data = json_decode(wp_remote_retrieve_body($response), true);
+        
+        $history_response = wp_remote_get($api_url . '/history', [
+            'timeout' => 30,
+            'sslverify' => false
+        ]);
+
+        if (is_wp_error($history_response)) {
+            ai_blogpost_debug_log('ComfyUI history endpoint failed:', $history_response->get_error_message());
+            wp_send_json_error('Failed to access history endpoint');
+            return;
+        }
+
+        $history_data = json_decode(wp_remote_retrieve_body($history_response), true);
+        
+        update_option('ai_blogpost_comfyui_api_url', $api_url);
+        
+        ai_blogpost_log_api_call('ComfyUI Test', true, [
+            'url' => $api_url,
+            'status' => 'Connection successful',
+            'queue_status' => $queue_data,
+            'history_available' => !empty($history_data)
+        ]);
+
+        wp_send_json_success([
+            'message' => 'Connection successful',
+            'queue_status' => $queue_data,
+            'history_available' => !empty($history_data)
+        ]);
+    } catch (Exception $e) {
+        ai_blogpost_debug_log('ComfyUI error:', $e->getMessage());
+        wp_send_json_error('Error: ' . $e->getMessage());
+    }
+}
+add_action('wp_ajax_test_comfyui_connection', 'handle_comfyui_test');
+
+/**
+ * Handle LM Studio connection test
+ */
+function handle_lm_studio_test() {
+    check_ajax_referer('ai_blogpost_nonce', 'nonce');
+    
+    $api_url = sanitize_text_field($_POST['url']);
+    $api_url = rtrim($api_url, '/') . '/v1';
+    
+    try {
+        ai_blogpost_debug_log('Testing LM Studio connection:', ['url' => $api_url]);
+
+        $response = wp_remote_get($api_url . '/models', [
+            'headers' => ['Content-Type' => 'application/json'],
+            'timeout' => 30,
+            'sslverify' => false
+        ]);
+
+        if (is_wp_error($response)) {
+            ai_blogpost_debug_log('LM Studio connection failed:', $response->get_error_message());
+            wp_send_json_error('Connection failed: ' . $response->get_error_message());
+            return;
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        $models = [];
+        if (!empty($data['data'])) {
+            $models = $data['data'];
+        } elseif (is_array($data)) {
+            $models = array_map(function($model) {
+                return is_array($model) ? $model : ['id' => $model];
+            }, $data);
+        }
+
+        if (empty($models)) {
+            ai_blogpost_debug_log('No models found in LM Studio response:', $data);
+            wp_send_json_error('No models found in LM Studio');
+            return;
+        }
+
+        update_option('ai_blogpost_available_lm_models', $models);
+        update_option('ai_blogpost_lm_api_url', rtrim($api_url, '/v1'));
+        
+        ai_blogpost_log_api_call('LM Studio Test', true, [
+            'url' => $api_url,
+            'status' => 'Connection successful',
+            'models_found' => count($models),
+            'models' => array_map(function($model) {
+                return isset($model['id']) ? $model['id'] : $model;
+            }, $models)
+        ]);
+
+        wp_send_json_success([
+            'message' => 'Connection successful',
+            'models' => $models
+        ]);
+    } catch (Exception $e) {
+        ai_blogpost_debug_log('LM Studio error:', $e->getMessage());
+        wp_send_json_error('Error: ' . $e->getMessage());
+    }
+}
+add_action('wp_ajax_test_lm_studio', 'handle_lm_studio_test');

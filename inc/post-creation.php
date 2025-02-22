@@ -55,19 +55,18 @@ function ai_blogpost_get_post_data() {
 function create_ai_blogpost() {
     try {
         ai_blogpost_debug_log('Starting blog post creation');
-        
         $post_data = ai_blogpost_get_post_data();
         ai_blogpost_debug_log('Got post data:', $post_data);
         
-        // Generate text content
         $ai_result = fetch_ai_response($post_data);
         if (!$ai_result) {
             throw new Exception('No AI result received');
         }
+        ai_blogpost_debug_log('AI result:', $ai_result);
 
         $parsed_content = parse_ai_content($ai_result['content']);
-        
-        // Create post with SEO metadata
+        ai_blogpost_debug_log('Parsed content:', $parsed_content);
+
         $post_args = array(
             'post_title' => wp_strip_all_tags($parsed_content['title']),
             'post_content' => wpautop($parsed_content['content']),
@@ -81,42 +80,21 @@ function create_ai_blogpost() {
         );
 
         $post_id = wp_insert_post($post_args);
-        
-        // Handle featured image generation
+        ai_blogpost_debug_log('Post ID created:', $post_id);
+
         $generation_type = get_cached_option('ai_blogpost_image_generation_type', 'none');
         if ($generation_type !== 'none') {
             ai_blogpost_debug_log('Starting image generation with type:', $generation_type);
-            
-            // Use the appropriate template based on generation type
-            $template = '';
-            if ($generation_type === 'dalle') {
-                $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
-                    'Create a professional blog header image about [category]. Style: Modern and professional.');
-            } elseif ($generation_type === 'comfyui') {
-                // For ComfyUI, we use the workflow's built-in prompt template
-                $template = '[category]';
-            }
-            
-            // Create image data with category
             $image_data = array(
                 'category' => $post_data['category'],
-                'template' => $template
+                'template' => get_cached_option("ai_blogpost_{$generation_type}_prompt_template", 'A professional blog header image for [category], modern style, clean design')
             );
-            
-            ai_blogpost_debug_log('Image generation data:', $image_data);
-            
-            try {
-                $attach_id = fetch_dalle_image_from_text($image_data);
-                if ($attach_id) {
-                    set_post_thumbnail($post_id, $attach_id);
-                    ai_blogpost_debug_log('Successfully set featured image:', $attach_id);
-                } else {
-                    throw new Exception('Image generation failed - no attachment ID returned');
-                }
-            } catch (Exception $e) {
-                ai_blogpost_debug_log('Image generation error:', $e->getMessage());
-                // Don't fail the whole post creation if image fails
-                error_log('AI Blogpost Image Generation Error: ' . $e->getMessage());
+            $attach_id = fetch_dalle_image_from_text($image_data);
+            if ($attach_id) {
+                set_post_thumbnail($post_id, $attach_id);
+                ai_blogpost_debug_log('Successfully set featured image:', $attach_id);
+            } else {
+                ai_blogpost_debug_log('Image generation failed');
             }
         }
 
