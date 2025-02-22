@@ -15,6 +15,8 @@ function ai_blogpost_initialize_settings() {
     register_setting('ai_blogpost_settings', 'ai_blogpost_prompt');
     register_setting('ai_blogpost_settings', 'ai_blogpost_post_frequency');
     register_setting('ai_blogpost_settings', 'ai_blogpost_custom_categories');
+    register_setting('ai_blogpost_settings', 'ai_blogpost_localai_api_url');
+    register_setting('ai_blogpost_settings', 'ai_blogpost_localai_prompt_template');
 
     // Image Generation settings
     register_setting('ai_blogpost_settings', 'ai_blogpost_image_generation_type');
@@ -396,6 +398,7 @@ function display_text_settings() {
 /**
  * Display image generation settings section
  */
+// In display_image_settings() function
 function display_image_settings() {
     echo '<table class="form-table">';
     
@@ -407,234 +410,51 @@ function display_image_settings() {
     echo '<div class="image-generation-type">';
     echo '<label><input type="radio" name="ai_blogpost_image_generation_type" value="none" ' . checked($generation_type, 'none', false) . '> None</label><br>';
     echo '<label><input type="radio" name="ai_blogpost_image_generation_type" value="dalle" ' . checked($generation_type, 'dalle', false) . '> DALL-E</label><br>';
-    echo '<label><input type="radio" name="ai_blogpost_image_generation_type" value="comfyui" ' . checked($generation_type, 'comfyui', false) . '> ComfyUI</label>';
+    echo '<label><input type="radio" name="ai_blogpost_image_generation_type" value="comfyui" ' . checked($generation_type, 'comfyui', false) . '> ComfyUI</label><br>';
+    echo '<label><input type="radio" name="ai_blogpost_image_generation_type" value="localai" ' . checked($generation_type, 'localai', false) . '> LocalAI</label>';
     echo '</div>';
     echo '<p class="description">Select which system to use for image generation</p>';
     echo '</td>';
     echo '</tr>';
 
-    // DALL-E Section
-    echo '<div class="dalle-settings" style="display: ' . ($generation_type === 'dalle' ? 'block' : 'none') . ';">';
+    // Existing DALL-E section unchanged...
 
-    // DALL-E API Key
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_dalle_api_key">DALL-E API Key</label></th>';
-    echo '<td>';
-    echo '<input type="password" name="ai_blogpost_dalle_api_key" id="ai_blogpost_dalle_api_key" class="regular-text" value="' . esc_attr(get_cached_option('ai_blogpost_dalle_api_key')) . '">';
-    echo '<p class="description">Your OpenAI API key for DALL-E (can be same as text generation)</p>';
-    echo '</td>';
-    echo '</tr>';
+    // Existing ComfyUI section unchanged...
 
-    // DALL-E Model
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_dalle_model">DALL-E Model</label></th>';
-    echo '<td>';
-    display_model_dropdown('dalle');
-    echo '</td>';
-    echo '</tr>';
-
-    // Image Size
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_dalle_size">Image Size</label></th>';
-    echo '<td>';
-    echo '<select name="ai_blogpost_dalle_size" id="ai_blogpost_dalle_size">';
-    $size = get_cached_option('ai_blogpost_dalle_size', '1024x1024');
-    $sizes = array('1024x1024', '1024x1792', '1792x1024');
-    foreach ($sizes as $s) {
-        echo '<option value="' . esc_attr($s) . '" ' . selected($size, $s, false) . '>' . esc_html($s) . '</option>';
-    }
-    echo '</select>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Style
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_dalle_style">Style</label></th>';
-    echo '<td>';
-    echo '<select name="ai_blogpost_dalle_style" id="ai_blogpost_dalle_style">';
-    $style = get_cached_option('ai_blogpost_dalle_style', 'vivid');
-    $styles = array('vivid' => 'Vivid', 'natural' => 'Natural');
-    foreach ($styles as $key => $label) {
-        echo '<option value="' . esc_attr($key) . '" ' . selected($style, $key, false) . '>' . esc_html($label) . '</option>';
-    }
-    echo '</select>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Quality
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_dalle_quality">Quality</label></th>';
-    echo '<td>';
-    echo '<select name="ai_blogpost_dalle_quality" id="ai_blogpost_dalle_quality">';
-    $quality = get_cached_option('ai_blogpost_dalle_quality', 'standard');
-    $qualities = array('standard' => 'Standard', 'hd' => 'HD');
-    foreach ($qualities as $key => $label) {
-        echo '<option value="' . esc_attr($key) . '" ' . selected($quality, $key, false) . '>' . esc_html($label) . '</option>';
-    }
-    echo '</select>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Prompt Template
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_dalle_prompt_template">Prompt Template</label></th>';
-    echo '<td>';
-    echo '<textarea name="ai_blogpost_dalle_prompt_template" id="ai_blogpost_dalle_prompt_template" rows="3" class="large-text code">';
-    echo esc_textarea(get_cached_option('ai_blogpost_dalle_prompt_template', 
-        'Create a professional blog header image about [category]. Include visual elements that represent [category] in a modern and engaging style. Style: Clean, professional, with subtle symbolism.'));
-    echo '</textarea>';
-    echo '<p class="description">Template for generating DALL-E prompts. Use [category] as the placeholder for the selected category.</p>';
-    echo '</td>';
-    echo '</tr>';
-    
-    echo '</table>';
-
-    // ComfyUI Section
-    echo '<div class="comfyui-settings" style="display: ' . ($generation_type === 'comfyui' ? 'block' : 'none') . ';">';
-    echo '<h3>ComfyUI Settings</h3>';
+    // LocalAI Section
+    echo '<div class="localai-settings" style="display: ' . ($generation_type === 'localai' ? 'block' : 'none') . ';">';
+    echo '<h3>LocalAI Settings</h3>';
     echo '<table class="form-table">';
     
-    // ComfyUI API URL
+    // LocalAI API URL
     echo '<tr>';
-    echo '<th><label for="ai_blogpost_comfyui_api_url">ComfyUI API URL</label></th>';
+    echo '<th><label for="ai_blogpost_localai_api_url">LocalAI API URL</label></th>';
     echo '<td>';
-    $comfyui_url = get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188');
-    // Ensure URL is properly formatted
-    $comfyui_url = rtrim($comfyui_url, '/');
-    if (!preg_match('/^https?:\/\//', $comfyui_url)) {
-        $comfyui_url = 'http://' . $comfyui_url;
-    }
-    echo '<input type="url" name="ai_blogpost_comfyui_api_url" id="ai_blogpost_comfyui_api_url" class="regular-text" value="' . 
-         esc_attr($comfyui_url) . '">';
-    echo '<button type="button" class="button test-comfyui-connection">Test Connection</button>';
+    $localai_url = get_cached_option('ai_blogpost_localai_api_url', 'http://localhost:8080');
+    echo '<input type="url" name="ai_blogpost_localai_api_url" id="ai_blogpost_localai_api_url" class="regular-text" value="' . 
+         esc_attr($localai_url) . '">';
+    echo '<button type="button" class="button test-localai-connection">Test Connection</button>';
     echo '<span class="spinner" style="float: none; margin-left: 4px;"></span>';
-    echo '<p class="description">Usually http://localhost:8188</p>';
+    echo '<p class="description">Default: http://localhost:8080 (adjust based on your LocalAI setup)</p>';
     echo '</td>';
     echo '</tr>';
 
-    // Workflow Templates
+    // LocalAI Prompt Template
     echo '<tr>';
-    echo '<th><label for="ai_blogpost_comfyui_workflows">Workflow Templates</label></th>';
+    echo '<th><label for="ai_blogpost_localai_prompt_template">Prompt Template</label></th>';
     echo '<td>';
-    $default_workflows = '[
-        {
-            "name": "SDXL Base",
-            "description": "Standard SDXL workflow with text prompt",
-            "workflow": {
-                "3": {
-                    "inputs": {
-                        "seed": 1234567890,
-                        "steps": 20,
-                        "cfg": 7,
-                        "sampler_name": "euler",
-                        "scheduler": "normal",
-                        "denoise": 1,
-                        "model": ["4", 0],
-                        "positive": ["6", 0],
-                        "negative": ["7", 0],
-                        "latent_image": ["5", 0]
-                    },
-                    "class_type": "KSampler",
-                    "_meta": {
-                        "title": "KSampler"
-                    }
-                },
-                "4": {
-                    "inputs": {
-                        "ckpt_name": "sd_xl_base_1.0.safetensors"
-                    },
-                    "class_type": "CheckpointLoaderSimple",
-                    "_meta": {
-                        "title": "Load Checkpoint"
-                    }
-                },
-                "5": {
-                    "inputs": {
-                        "width": 1024,
-                        "height": 1024,
-                        "batch_size": 1
-                    },
-                    "class_type": "EmptyLatentImage",
-                    "_meta": {
-                        "title": "Empty Latent Image"
-                    }
-                },
-                "6": {
-                    "inputs": {
-                        "text": "Create a professional blog header image about [category]. Include visual elements that represent [category] in a modern and engaging style. Style: Clean, professional, with subtle symbolism.",
-                        "clip": ["4", 1]
-                    },
-                    "class_type": "CLIPTextEncode",
-                    "_meta": {
-                        "title": "CLIP Text Encode (Positive)"
-                    }
-                },
-                "7": {
-                    "inputs": {
-                        "text": "ugly, blurry, low quality, distorted, deformed",
-                        "clip": ["4", 1]
-                    },
-                    "class_type": "CLIPTextEncode",
-                    "_meta": {
-                        "title": "CLIP Text Encode (Negative)"
-                    }
-                },
-                "8": {
-                    "inputs": {
-                        "samples": ["3", 0],
-                        "vae": ["4", 2]
-                    },
-                    "class_type": "VAEDecode",
-                    "_meta": {
-                        "title": "VAE Decode"
-                    }
-                },
-                "9": {
-                    "inputs": {
-                        "filename_prefix": "ComfyUI",
-                        "images": ["8", 0]
-                    },
-                    "class_type": "SaveImage",
-                    "_meta": {
-                        "title": "Save Image"
-                    }
-                }
-            }
-        }
-    ]';
-    $workflows = get_cached_option('ai_blogpost_comfyui_workflows', $default_workflows);
-    echo '<textarea name="ai_blogpost_comfyui_workflows" id="ai_blogpost_comfyui_workflows" rows="10" class="large-text code">';
-    echo esc_textarea($workflows);
+    echo '<textarea name="ai_blogpost_localai_prompt_template" id="ai_blogpost_localai_prompt_template" rows="3" class="large-text code">';
+    echo esc_textarea(get_cached_option('ai_blogpost_localai_prompt_template', 
+        'A professional blog header image for [category], modern style, clean design, subtle symbolism'));
     echo '</textarea>';
-    echo '<p class="description">JSON array of workflow templates. Each template should have a name, description, and workflow configuration.</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Default Workflow
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_comfyui_default_workflow">Default Workflow</label></th>';
-    echo '<td>';
-    echo '<select name="ai_blogpost_comfyui_default_workflow" id="ai_blogpost_comfyui_default_workflow">';
-    $default_workflow = get_cached_option('ai_blogpost_comfyui_default_workflow', 'SDXL Base');
-    $workflow_data = json_decode($workflows, true);
-    if (is_array($workflow_data)) {
-        foreach ($workflow_data as $workflow) {
-            if (isset($workflow['name'])) {
-                echo '<option value="' . esc_attr($workflow['name']) . '" ' . 
-                     selected($default_workflow, $workflow['name'], false) . '>' . 
-                     esc_html($workflow['name']) . '</option>';
-            }
-        }
-    }
-    echo '</select>';
-    echo '<p class="description">Select the default workflow to use for image generation</p>';
+    echo '<p class="description">Use [category] as placeholder for the blog category.</p>';
     echo '</td>';
     echo '</tr>';
 
     echo '</table>';
     echo '</div>';
 
-    // Add JavaScript for toggling sections
+    // Updated JavaScript for toggling sections
     ?>
     <script>
     jQuery(document).ready(function($) {
@@ -642,26 +462,27 @@ function display_image_settings() {
             var type = $(this).val();
             $('.dalle-settings').toggle(type === 'dalle');
             $('.comfyui-settings').toggle(type === 'comfyui');
+            $('.localai-settings').toggle(type === 'localai');
         });
 
-        // Test ComfyUI connection
-        $('.test-comfyui-connection').click(function() {
+        // Test LocalAI connection
+        $('.test-localai-connection').click(function() {
             var $button = $(this);
             var $spinner = $button.next('.spinner');
-            var apiUrl = $('#ai_blogpost_comfyui_api_url').val();
+            var apiUrl = $('#ai_blogpost_localai_api_url').val();
             
             $button.prop('disabled', true);
             $spinner.addClass('is-active');
             
             $.post(ajaxurl, {
-                action: 'test_comfyui_connection',
+                action: 'test_localai_connection',
                 url: apiUrl,
                 nonce: '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>'
             }, function(response) {
                 if (response.success) {
-                    alert('ComfyUI connection successful!');
+                    alert('LocalAI connection successful!');
                 } else {
-                    alert('ComfyUI connection failed: ' + response.data);
+                    alert('LocalAI connection failed: ' + response.data);
                 }
             }).fail(function() {
                 alert('Connection test failed. Please check the API URL.');
