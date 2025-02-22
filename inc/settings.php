@@ -454,6 +454,52 @@ function display_image_settings() {
     echo '</table>';
     echo '</div>';
 
+    // ComfyUI Section
+    echo '<div class="comfyui-settings" style="display: ' . ($generation_type === 'comfyui' ? 'block' : 'none') . ';">';
+    echo '<h3>ComfyUI Settings</h3>';
+    echo '<table class="form-table">';
+    
+    // ComfyUI API URL
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_comfyui_api_url">ComfyUI API URL</label></th>';
+    echo '<td>';
+    $comfyui_url = get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188');
+    echo '<input type="url" name="ai_blogpost_comfyui_api_url" id="ai_blogpost_comfyui_api_url" class="regular-text" value="' . 
+         esc_attr($comfyui_url) . '">';
+    echo '<button type="button" class="button test-comfyui-connection">Test Connection</button>';
+    echo '<span class="spinner" style="float: none; margin-left: 4px;"></span>';
+    echo '<p class="description">Default: http://localhost:8188</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    // Load workflow configuration
+    $workflows_json = file_get_contents(plugin_dir_path(__FILE__) . '../workflows/config.json');
+    $workflows_data = json_decode($workflows_json, true);
+    $workflows = isset($workflows_data['workflows']) ? $workflows_data['workflows'] : [];
+    $default_workflow = isset($workflows_data['default_workflow']) ? $workflows_data['default_workflow'] : '';
+
+    // Update WordPress options
+    update_option('ai_blogpost_comfyui_workflows', json_encode($workflows));
+    update_option('ai_blogpost_comfyui_default_workflow', $default_workflow);
+
+    // Display available workflows
+    echo '<tr>';
+    echo '<th><label for="ai_blogpost_comfyui_default_workflow">Default Workflow</label></th>';
+    echo '<td>';
+    echo '<select name="ai_blogpost_comfyui_default_workflow" id="ai_blogpost_comfyui_default_workflow">';
+    foreach ($workflows as $workflow) {
+        echo '<option value="' . esc_attr($workflow['name']) . '" ' . 
+             selected($default_workflow, $workflow['name'], false) . '>' . 
+             esc_html($workflow['name'] . ' - ' . $workflow['description']) . '</option>';
+    }
+    echo '</select>';
+    echo '<p class="description">Select the default workflow to use for image generation</p>';
+    echo '</td>';
+    echo '</tr>';
+
+    echo '</table>';
+    echo '</div>';
+
     // Updated JavaScript for toggling sections
     ?>
     <script>
@@ -483,6 +529,33 @@ function display_image_settings() {
                     alert('LocalAI connection successful!');
                 } else {
                     alert('LocalAI connection failed: ' + response.data);
+                }
+            }).fail(function() {
+                alert('Connection test failed. Please check the API URL.');
+            }).always(function() {
+                $button.prop('disabled', false);
+                $spinner.removeClass('is-active');
+            });
+        });
+
+        // Test ComfyUI connection
+        $('.test-comfyui-connection').click(function() {
+            var $button = $(this);
+            var $spinner = $button.next('.spinner');
+            var apiUrl = $('#ai_blogpost_comfyui_api_url').val();
+            
+            $button.prop('disabled', true);
+            $spinner.addClass('is-active');
+            
+            $.post(ajaxurl, {
+                action: 'test_comfyui_connection',
+                url: apiUrl,
+                nonce: '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>'
+            }, function(response) {
+                if (response.success) {
+                    alert('ComfyUI connection successful! Client ID: ' + response.data.client_id);
+                } else {
+                    alert('ComfyUI connection failed: ' + response.data);
                 }
             }).fail(function() {
                 alert('Connection test failed. Please check the API URL.');
