@@ -5,9 +5,6 @@ if (!defined('ABSPATH')) {
 
 /**
  * Fetch AI response for blog post generation
- * 
- * @param array $post_data Post data including category and focus keyword
- * @return array|null Generated content or null on failure
  */
 function fetch_ai_response($post_data) {
     try {
@@ -23,7 +20,7 @@ function fetch_ai_response($post_data) {
 
         $prompt = prepare_ai_prompt($post_data);
         $response = send_ai_request($prompt);
-        
+
         if (!isset($response['choices'][0]['message']['content'])) {
             throw new Exception('Invalid API response format');
         }
@@ -53,14 +50,11 @@ function fetch_ai_response($post_data) {
 
 /**
  * Prepare AI prompt with system messages and user content
- * 
- * @param array $post_data Post data for prompt generation
- * @return array Array of message objects for the API
  */
 function prepare_ai_prompt($post_data) {
     try {
         $language = get_option('ai_blogpost_language', 'en');
-        
+
         $system_messages = [
             [
                 "role" => "system",
@@ -114,10 +108,10 @@ Requirements:
                 ]
             ]
         );
-        
+
         ai_blogpost_debug_log('Prepared messages:', $messages);
         return $messages;
-        
+
     } catch (Exception $e) {
         ai_blogpost_debug_log('Error in prepare_ai_prompt:', $e->getMessage());
         throw $e;
@@ -126,9 +120,6 @@ Requirements:
 
 /**
  * Send request to OpenAI API
- * 
- * @param array $messages Array of message objects
- * @return array API response
  */
 function send_ai_request($messages) {
     try {
@@ -152,18 +143,18 @@ function send_ai_request($messages) {
 
         ai_blogpost_debug_log('Sending API request');
         $response = wp_remote_post('https://api.openai.com/v1/chat/completions', $args);
-        
+
         if (is_wp_error($response)) {
             throw new Exception('API request failed: ' . $response->get_error_message());
         }
-        
+
         $result = json_decode(wp_remote_retrieve_body($response), true);
         ai_blogpost_debug_log('API response received:', $result);
-        
+
         if (!isset($result['choices'][0]['message']['content'])) {
             throw new Exception('Invalid API response format');
         }
-        
+
         return $result;
     } catch (Exception $e) {
         ai_blogpost_debug_log('Error in send_ai_request:', $e->getMessage());
@@ -173,9 +164,6 @@ function send_ai_request($messages) {
 
 /**
  * Send request to LM Studio API
- * 
- * @param array $messages Array of message objects
- * @return array API response
  */
 function send_lm_studio_request($messages) {
     try {
@@ -196,7 +184,7 @@ function send_lm_studio_request($messages) {
                 'model' => get_cached_option('ai_blogpost_lm_model', 'model.gguf'),
                 'prompt' => $prompt,
                 'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
-                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096), // Consistentie met OpenAI
+                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096),
                 'stream' => false
             )),
             'headers' => array(
@@ -207,13 +195,13 @@ function send_lm_studio_request($messages) {
         );
 
         $response = wp_remote_post($api_url . '/completions', $args);
-        
+
         if (is_wp_error($response)) {
             throw new Exception('LM Studio API request failed: ' . $response->get_error_message());
         }
 
         $result = json_decode(wp_remote_retrieve_body($response), true);
-        
+
         if (!isset($result['choices'][0]['text'])) {
             throw new Exception('Invalid response format from LM Studio');
         }
@@ -241,13 +229,10 @@ function send_lm_studio_request($messages) {
 
 /**
  * Fetch DALL·E image based on text content
- * 
- * @param array $image_data Image generation data
- * @return int|null Attachment ID or null on failure
  */
 function fetch_dalle_image_from_text($image_data) {
     $generation_type = get_cached_option('ai_blogpost_image_generation_type', 'none');
-    
+
     if ($generation_type === 'comfyui') {
         return fetch_comfyui_image_from_text($image_data);
     } elseif ($generation_type === 'dalle') {
@@ -255,15 +240,12 @@ function fetch_dalle_image_from_text($image_data) {
     } elseif ($generation_type === 'localai') {
         return fetch_localai_image($image_data);
     }
-    
+
     return null;
 }
 
 /**
  * Fetch image using LocalAI
- * 
- * @param array $image_data Image generation data
- * @return int|null Attachment ID or null on failure
  */
 function fetch_localai_image($image_data) {
     try {
@@ -295,7 +277,7 @@ function fetch_localai_image($image_data) {
         $payload = [
             'prompt' => $prompt,
             'n' => 1,
-            'size' => get_cached_option('ai_blogpost_localai_size', '1024x1024') // Configureerbaar maken
+            'size' => get_cached_option('ai_blogpost_localai_size', '1024x1024')
         ];
 
         $response = wp_remote_post($api_url . '/v1/images/generations', [
@@ -339,7 +321,7 @@ function fetch_localai_image($image_data) {
 
         $filename = 'localai-' . sanitize_title($category) . '-' . time() . '.png';
         $upload = wp_upload_bits($filename, null, wp_remote_retrieve_body($image_response));
-        
+
         if (!empty($upload['error'])) {
             throw new Exception('Failed to save image: ' . $upload['error']);
         }
@@ -385,10 +367,10 @@ function fetch_localai_image($image_data) {
  */
 function handle_localai_test() {
     check_ajax_referer('ai_blogpost_nonce', 'nonce');
-    
+
     $api_url = sanitize_text_field($_POST['url']);
     $api_url = rtrim($api_url, '/');
-    
+
     try {
         ai_blogpost_debug_log('Testing LocalAI connection:', [
             'url' => $api_url
@@ -433,19 +415,14 @@ add_action('wp_ajax_test_localai_connection', 'handle_localai_test');
 
 /**
  * Get or refresh ComfyUI client ID
- * 
- * @param string $api_url The ComfyUI API URL
- * @param bool $force_refresh Whether to force a refresh of the client ID
- * @return string Valid client ID
- * @throws Exception if unable to get valid client ID
  */
 function get_comfyui_client_id($api_url, $force_refresh = false) {
     try {
         $client_id = get_cached_option('ai_blogpost_comfyui_client_id');
-        
+
         if (empty($client_id) || $force_refresh || !validate_comfyui_client_id($api_url, $client_id)) {
             ai_blogpost_debug_log('Requesting new ComfyUI client ID');
-            
+
             $response = wp_remote_get($api_url . '/client_id', [
                 'timeout' => 30,
                 'sslverify' => false
@@ -457,17 +434,17 @@ function get_comfyui_client_id($api_url, $force_refresh = false) {
 
             $body = wp_remote_retrieve_body($response);
             $data = json_decode($body, true);
-            
+
             if (empty($data['client_id'])) {
                 throw new Exception('Invalid client ID response from ComfyUI server');
             }
 
             $client_id = $data['client_id'];
             update_option('ai_blogpost_comfyui_client_id', $client_id);
-            
+
             ai_blogpost_debug_log('New client ID obtained:', $client_id);
         }
-        
+
         return $client_id;
     } catch (Exception $e) {
         ai_blogpost_debug_log('Error in get_comfyui_client_id:', $e->getMessage());
@@ -477,10 +454,6 @@ function get_comfyui_client_id($api_url, $force_refresh = false) {
 
 /**
  * Validate ComfyUI client ID
- * 
- * @param string $api_url The ComfyUI API URL
- * @param string $client_id The client ID to validate
- * @return bool Whether the client ID is valid
  */
 function validate_comfyui_client_id($api_url, $client_id) {
     try {
@@ -496,7 +469,7 @@ function validate_comfyui_client_id($api_url, $client_id) {
 
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
-        
+
         return !empty($data) && is_array($data);
     } catch (Exception $e) {
         return false;
@@ -505,9 +478,6 @@ function validate_comfyui_client_id($api_url, $client_id) {
 
 /**
  * Fetch image using ComfyUI
- * 
- * @param array $image_data Image generation data
- * @return int|null Attachment ID or null on failure
  */
 function fetch_comfyui_image_from_text($image_data) {
     try {
@@ -529,29 +499,21 @@ function fetch_comfyui_image_from_text($image_data) {
             throw new Exception('ComfyUI server not running: ' . $status_response->get_error_message());
         }
 
-        $workflows = json_decode(get_cached_option('ai_blogpost_comfyui_workflows', '[]'), true);
-        $default_workflow = get_cached_option('ai_blogpost_comfyui_default_workflow', '');
-        if (empty($workflows)) {
-            throw new Exception('No ComfyUI workflows configured');
-        }
+        // Laad workflows uit WordPress-opties
+        $workflows = get_option('ai_blogpost_comfyui_workflows', []);
+        $default_workflow = get_option('ai_blogpost_comfyui_default_workflow', '');
 
-        $workflow_config = null;
-        foreach ($workflows as $workflow) {
-            if ($workflow['name'] === $default_workflow) {
-                $workflow_config = $workflow;
-                break;
-            }
-        }
-        if (!$workflow_config) {
+        if (empty($workflows[$default_workflow])) {
             throw new Exception('Selected workflow not found');
         }
 
-        $workflow_data = $workflow_config['workflow'];
+        $workflow_data = $workflows[$default_workflow];
+
         $prompt = [];
         foreach ($workflow_data['nodes'] as $node) {
             $node_id = strval($node['id']);
             $prompt[$node_id] = [
-                'class_type' => $node['class_type'],
+                'class_type' => $node['type'] ?? $node['class_type'], // Ondersteuning voor beide formaten
                 'inputs' => []
             ];
 
@@ -593,7 +555,7 @@ function fetch_comfyui_image_from_text($image_data) {
         ai_blogpost_log_api_call('Image Generation', true, [
             'type' => 'ComfyUI',
             'category' => $category,
-            'workflow' => $workflow_config['name'],
+            'workflow' => $default_workflow,
             'status' => 'Starting image generation',
             'prompt' => json_encode($prompt)
         ]);
@@ -679,7 +641,7 @@ function fetch_comfyui_image_from_text($image_data) {
                 ai_blogpost_log_api_call('Image Generation', true, [
                     'type' => 'ComfyUI',
                     'category' => $category,
-                    'workflow' => $workflow_config['name'],
+                    'workflow' => $default_workflow,
                     'image_id' => $attach_id,
                     'status' => 'Image Generated Successfully'
                 ]);
@@ -708,8 +670,6 @@ function fetch_comfyui_image_from_text($image_data) {
 
 /**
  * Fetch available OpenAI models
- * 
- * @return bool Success status
  */
 function fetch_openai_models() {
     try {
@@ -752,4 +712,10 @@ function fetch_openai_models() {
         ai_blogpost_debug_log('Error fetching models:', $e->getMessage());
         return false;
     }
+}
+
+// Aanname: deze functie bestaat elders in je codebase. Als dat niet zo is, moet je deze implementeren.
+function fetch_dalle_image($image_data) {
+    // Placeholder voor DALL·E logica
+    return null;
 }
