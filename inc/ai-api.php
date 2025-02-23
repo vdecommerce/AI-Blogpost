@@ -491,6 +491,7 @@ function fetch_comfyui_image_from_text($image_data) {
             $api_url = 'http://' . $api_url;
         }
 
+        // Controleer of de ComfyUI-server draait
         $status_response = wp_remote_get($api_url . '/system_stats', [
             'timeout' => 10,
             'sslverify' => false
@@ -499,12 +500,24 @@ function fetch_comfyui_image_from_text($image_data) {
             throw new Exception('ComfyUI server not running: ' . $status_response->get_error_message());
         }
 
-        // Laad workflows uit WordPress-opties
+        // Laad workflows
         $workflows = get_option('ai_blogpost_comfyui_workflows', []);
         $default_workflow = get_option('ai_blogpost_comfyui_default_workflow', '');
+        
+        ai_blogpost_debug_log('Available workflows:', $workflows);
+        ai_blogpost_debug_log('Selected default workflow:', $default_workflow);
 
-        if (empty($workflows[$default_workflow])) {
-            throw new Exception('Selected workflow not found');
+        // Als de geselecteerde workflow niet bestaat, gebruik de eerste beschikbare
+        if (empty($workflows)) {
+            throw new Exception('No workflows uploaded');
+        }
+        if (empty($default_workflow) || !isset($workflows[$default_workflow])) {
+            $default_workflow = array_key_first($workflows);
+            if (!$default_workflow) {
+                throw new Exception('No valid workflow available');
+            }
+            ai_blogpost_debug_log('Falling back to first available workflow:', $default_workflow);
+            update_option('ai_blogpost_comfyui_default_workflow', $default_workflow); // Update de default
         }
 
         $workflow_data = $workflows[$default_workflow];
@@ -513,7 +526,7 @@ function fetch_comfyui_image_from_text($image_data) {
         foreach ($workflow_data['nodes'] as $node) {
             $node_id = strval($node['id']);
             $prompt[$node_id] = [
-                'class_type' => $node['type'] ?? $node['class_type'], // Ondersteuning voor beide formaten
+                'class_type' => $node['type'] ?? $node['class_type'],
                 'inputs' => []
             ];
 
@@ -542,9 +555,7 @@ function fetch_comfyui_image_from_text($image_data) {
                     $link_id = $input['link'];
                     foreach ($workflow_data['links'] as $link) {
                         if ($link[0] === $link_id) {
-                            $source_node_id = strval($link[1]);
-                            $source_slot = $link[2];
-                            $prompt[$node_id]['inputs'][$input['name']] = [$source_node_id, $source_slot];
+                            $prompt[$node_id]['inputs'][$input['name']] = [strval($link[1]), $link[2]];
                             break;
                         }
                     }

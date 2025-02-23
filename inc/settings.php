@@ -1,6 +1,6 @@
 <?php
 if (!defined('ABSPATH')) {
-    exit; // Exit if accessed directly
+    exit;
 }
 
 /**
@@ -17,8 +17,6 @@ function ai_blogpost_initialize_settings() {
     register_setting('ai_blogpost_settings', 'ai_blogpost_custom_categories');
     register_setting('ai_blogpost_settings', 'ai_blogpost_localai_api_url');
     register_setting('ai_blogpost_settings', 'ai_blogpost_localai_prompt_template');
-
-    // Image Generation settings
     register_setting('ai_blogpost_settings', 'ai_blogpost_image_generation_type');
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_api_key');
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_size');
@@ -26,25 +24,11 @@ function ai_blogpost_initialize_settings() {
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_quality');
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_model');
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_prompt_template');
-
-    // Language setting
     register_setting('ai_blogpost_settings', 'ai_blogpost_language');
-
-    // DALL·E settings
     register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_enabled');
-    register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_api_key');
-    register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_size');
-    register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_style');
-    register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_quality');
-    register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_model');
-    register_setting('ai_blogpost_settings', 'ai_blogpost_dalle_prompt_template');
-
-    // ComfyUI settings
     register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_api_url');
     register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_workflows');
     register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_default_workflow');
-
-    // LM Studio settings
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_enabled');
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_url');
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_key');
@@ -56,7 +40,7 @@ add_action('admin_init', 'ai_blogpost_initialize_settings');
  * Add menu page to WordPress admin
  */
 function ai_blogpost_admin_menu() {
-    add_menu_page('AI Blogpost Settings', 'AI Blogpost', 'manage_options', 'ai_blogpost', 'ai_blogpost_admin_page');
+    add_menu_page('AI Blogpost Settings', 'AI Blogpost', 'manage_options', 'ai_blogpost', 'ai_blogpost_admin_page', 'dashicons-admin-generic');
 }
 add_action('admin_menu', 'ai_blogpost_admin_menu');
 
@@ -64,595 +48,488 @@ add_action('admin_menu', 'ai_blogpost_admin_menu');
  * Display the admin settings page
  */
 function ai_blogpost_admin_page() {
-    // Verwerk geüploade workflow
+    // Handle workflow upload
     if (isset($_FILES['ai_blogpost_comfyui_workflow_upload']) && $_FILES['ai_blogpost_comfyui_workflow_upload']['error'] == UPLOAD_ERR_OK) {
         $file_tmp = $_FILES['ai_blogpost_comfyui_workflow_upload']['tmp_name'];
         $file_content = file_get_contents($file_tmp);
         $workflow_data = json_decode($file_content, true);
 
         if ($workflow_data && isset($workflow_data['nodes']) && isset($workflow_data['links'])) {
-            $workflow_name = sanitize_text_field($_POST['ai_blogpost_comfyui_workflow_name']);
+            $workflow_name = sanitize_text_field($_POST['ai_blogpost_comfyui_workflow_name'] ?? 'Workflow_' . time());
             if (!empty($workflow_name)) {
                 $workflows = get_option('ai_blogpost_comfyui_workflows', []);
                 $workflows[$workflow_name] = $workflow_data;
                 update_option('ai_blogpost_comfyui_workflows', $workflows);
-                echo '<div class="notice notice-success"><p>Workflow succesvol geüpload!</p></div>';
+                clear_ai_blogpost_cache();
+                if (empty(get_option('ai_blogpost_comfyui_default_workflow'))) {
+                    update_option('ai_blogpost_comfyui_default_workflow', $workflow_name);
+                }
+                echo '<div class="notice notice-success is-dismissible"><p>Workflow succesvol geüpload als "' . esc_html($workflow_name) . '"!</p></div>';
             } else {
-                echo '<div class="notice notice-error"><p>Voer een geldige naam in voor de workflow.</p></div>';
+                echo '<div class="notice notice-error is-dismissible"><p>Voer een geldige naam in voor de workflow.</p></div>';
             }
         } else {
-            echo '<div class="notice notice-error"><p>Ongeldig JSON-bestand. Zorg ervoor dat het een geldige ComfyUI-workflow is.</p></div>';
+            echo '<div class="notice notice-error is-dismissible"><p>Ongeldig JSON-bestand. Zorg ervoor dat het een geldige ComfyUI-workflow is met "nodes" en "links".</p></div>';
         }
     }
 
-    echo '<div class="wrap ai-blogpost-dashboard">';
-    echo '<h1>AI Blogpost Dashboard</h1>';
+    ?>
+    <div class="wrap ai-blogpost-dashboard">
+        <h1>AI Blogpost Dashboard</h1>
 
-    // Settings Form
-    echo '<div class="dashboard-content">';
+        <!-- Tabs Navigation -->
+        <div class="tabs">
+            <button class="tab-button active" data-tab="general">Algemene Instellingen</button>
+            <button class="tab-button" data-tab="text">Tekstgeneratie</button>
+            <button class="tab-button" data-tab="image">Afbeeldingsgeneratie</button>
+            <button class="tab-button" data-tab="status">Status</button>
+        </div>
 
-    // Test Post Section at the top
-    echo '<div class="test-post-section">';
-    echo '<div class="test-post-header">';
-    echo '<h2>Test Generation</h2>';
-    echo '<form method="post" style="display:inline-block;">';
-    echo '<input type="submit" name="test_ai_blogpost" class="button button-primary" value="Generate Test Post">';
-    echo '</form>';
-    echo '</div>';
+        <!-- Test Post Section -->
+        <div class="test-post-section">
+            <div class="test-post-header">
+                <h2>Test Generatie</h2>
+                <form method="post" style="display:inline-block;">
+                    <input type="submit" name="test_ai_blogpost" class="button button-primary" value="Genereer Test Post">
+                </form>
+            </div>
+            <?php
+            $next_post_time = wp_next_scheduled('ai_blogpost_cron_hook');
+            if ($next_post_time) {
+                echo '<div class="next-post-info">';
+                echo '<span class="dashicons dashicons-calendar-alt"></span> ';
+                echo 'Volgende geplande post: ' . get_date_from_gmt(date('Y-m-d H:i:s', $next_post_time), 'F j, Y @ H:i');
+                echo '</div>';
+            }
+            ?>
+        </div>
 
-    // Next scheduled post info
-    $next_post_time = wp_next_scheduled('ai_blogpost_cron_hook');
-    if ($next_post_time) {
-        echo '<div class="next-post-info">';
-        echo '<span class="dashicons dashicons-calendar-alt"></span> ';
-        echo 'Next scheduled post: ' . get_date_from_gmt(
-            date('Y-m-d H:i:s', $next_post_time),
-            'F j, Y @ H:i'
-        );
-        echo '</div>';
-    }
-    echo '</div>'; // Close test-post-section
+        <!-- Settings Form -->
+        <form method="post" action="options.php" enctype="multipart/form-data">
+            <?php 
+            settings_fields('ai_blogpost_settings'); 
+            do_settings_sections('ai_blogpost_settings');
+            ?>
 
-    // Settings Form
-    echo '<form method="post" action="options.php" enctype="multipart/form-data">';
-    settings_fields('ai_blogpost_settings');
-    do_settings_sections('ai_blogpost_settings');
+            <!-- General Settings Tab -->
+            <div class="tab-content active" id="general">
+                <h2>Algemene Instellingen</h2>
+                <?php display_general_settings(); ?>
+            </div>
 
-    // Settings sections in order
-    echo '<div class="settings-section">';
-    echo '<h2>Schedule Settings</h2>';
-    display_general_settings();
-    echo '</div>';
+            <!-- Text Generation Tab -->
+            <div class="tab-content" id="text">
+                <h2>Tekstgeneratie</h2>
+                <?php display_text_settings(); ?>
+            </div>
 
-    echo '<div class="settings-section">';
-    echo '<h2>OpenAI Text Generation</h2>';
-    display_text_settings();
-    echo '</div>';
+            <!-- Image Generation Tab -->
+            <div class="tab-content" id="image">
+                <h2>Afbeeldingsgeneratie</h2>
+                <?php display_image_settings(); ?>
+            </div>
 
-    echo '<div class="settings-section">';
-    echo '<h2>DALL·E Image Generation</h2>';
-    display_image_settings();
-    echo '</div>';
+            <!-- Submit Button -->
+            <p class="submit">
+                <?php submit_button('Instellingen Opslaan', 'primary', 'submit', false); ?>
+            </p>
+        </form>
 
-    submit_button('Save Settings');
-    echo '</form>';
+        <!-- Status Tab -->
+        <div class="tab-content" id="status">
+            <h2>Generatiestatus</h2>
+            <div class="status-actions">
+                <form method="post" style="display:inline;">
+                    <?php wp_nonce_field('clear_ai_logs_nonce'); ?>
+                    <input type="submit" name="clear_ai_logs" class="button" value="Logs Wissen">
+                </form>
+                <button type="button" class="button" onclick="location.reload();">Vernieuwen</button>
+            </div>
+            <h3>Tekstgeneratie Logs</h3>
+            <?php display_api_logs('Text Generation'); ?>
+            <h3>Afbeeldingsgeneratie Logs</h3>
+            <?php display_api_logs('Image Generation'); ?>
+        </div>
 
-    // Status Panel
-    echo '<div class="status-panel">';
-    echo '<div class="status-header">';
-    echo '<h2>Generation Status</h2>';
-    echo '<div class="status-actions">';
-    echo '<form method="post" style="display: inline;">';
-    wp_nonce_field('clear_ai_logs_nonce');
-    echo '<input type="submit" name="clear_ai_logs" class="button" value="Clear Logs">';
-    echo '</form>';
-    echo '<button type="button" class="button" onclick="window.location.reload();">Refresh Status</button>';
-    echo '</div>';
-    echo '</div>';
+        <!-- Styling -->
+        <style>
+            .ai-blogpost-dashboard { max-width: 1000px; margin: 20px auto; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+            .tabs { display: flex; gap: 5px; margin-bottom: 20px; }
+            .tab-button { padding: 10px 20px; background: #f1f1f1; border: none; border-radius: 5px 5px 0 0; cursor: pointer; font-weight: 500; transition: all 0.3s; }
+            .tab-button.active { background: #0073aa; color: white; }
+            .tab-content { display: none; padding: 20px; background: white; border: 1px solid #ccd0d4; border-radius: 0 5px 5px 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .tab-content.active { display: block; }
+            .form-table th { width: 200px; padding: 15px 0; vertical-align: top; }
+            .form-table td { padding: 15px 0; }
+            .regular-text, textarea { width: 100%; max-width: 400px; padding: 8px; border-radius: 4px; border: 1px solid #ccd0d4; }
+            .description { color: #666; font-size: 12px; margin-top: 5px; }
+            .submit { margin-top: 20px; text-align: right; }
+            .button-primary { background: #0073aa; border-color: #006799; }
+            .button-primary:hover { background: #006799; }
+            .test-post-section { margin-bottom: 20px; padding: 20px; background: #f8f9fa; border: 1px solid #e5e5e5; border-radius: 4px; }
+            .test-post-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+            .next-post-info { margin-top: 10px; color: #666; }
+            .status-actions { margin-bottom: 20px; display: flex; gap: 10px; }
+            .generation-option { flex: 1; padding: 15px; border: 1px solid #ccc; border-radius: 5px; transition: all 0.3s ease; cursor: pointer; }
+            .generation-option:hover { background: #f0f7ff; border-color: #2271b1; }
+            .template-guide { margin-top: 10px; padding: 15px; background: #f8f9fa; border: 1px solid #e2e4e7; border-radius: 4px; }
+        </style>
 
-    echo '<h3>Text Generation</h3>';
-    display_api_logs('Text Generation');
+        <!-- JavaScript -->
+        <script>
+            jQuery(document).ready(function($) {
+                // Tab switching
+                $('.tab-button').click(function() {
+                    $('.tab-button').removeClass('active');
+                    $('.tab-content').removeClass('active');
+                    $(this).addClass('active');
+                    $('#' + $(this).data('tab')).addClass('active');
+                });
 
-    echo '<h3 style="margin-top: 20px;">Image Generation</h3>';
-    display_api_logs('Image Generation');
-    echo '</div>'; // Close status-panel
+                // Image generation type toggle
+                $('input[name="ai_blogpost_image_generation_type"]').change(function() {
+                    var type = $(this).val();
+                    $('.generation-option').css({'background': 'none', 'border-color': '#ccc'});
+                    $(this).closest('.generation-option').css({'background': '#f0f7ff', 'border-color': '#2271b1'});
+                    $('.dalle-settings, .comfyui-settings').hide();
+                    if (type === 'dalle') $('.dalle-settings').show();
+                    if (type === 'comfyui') $('.comfyui-settings').show();
+                });
 
-    echo '</div>'; // Close dashboard-content
-    echo '</div>'; // Close wrap
+                $('.generation-option').click(function() {
+                    $(this).find('input[type="radio"]').prop('checked', true).trigger('change');
+                });
 
-    // Updated styling for single column layout
-    echo '<style>
-        .ai-blogpost-dashboard {
-            max-width: 1200px;
-            margin: 20px auto;
-        }
-        .dashboard-content {
-            background: #fff;
-            padding: 20px;
-            border: 1px solid #ccd0d4;
-            box-shadow: 0 1px 1px rgba(0,0,0,.04);
-        }
-        .settings-section {
-            margin-bottom: 30px;
-            padding: 20px;
-            background: #fff;
-            border: 1px solid #e5e5e5;
-            border-radius: 4px;
-        }
-        .settings-section h2 {
-            margin-top: 0;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #eee;
-        }
-        .test-post-section {
-            margin-bottom: 20px;
-            padding: 20px;
-            background: #f8f9fa;
-            border: 1px solid #e5e5e5;
-            border-radius: 4px;
-        }
-        .test-post-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        .test-post-header h2 {
-            margin: 0;
-        }
-        .next-post-info {
-            margin-top: 10px;
-            color: #666;
-        }
-        .status-panel {
-            margin-top: 30px;
-            padding: 20px;
-            background: #fff;
-            border: 1px solid #e5e5e5;
-            border-radius: 4px;
-        }
-        .status-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        .status-actions {
-            display: flex;
-            gap: 10px;
-        }
-        .form-table {
-            margin-top: 0;
-        }
-        .form-table th {
-            width: 200px;
-        }
-        .submit {
-            margin-top: 20px;
-            padding: 20px 0;
-            background: #f8f9fa;
-            border-top: 1px solid #eee;
-        }
-    </style>';
+                // Connection tests
+                function handleConnectionTest(buttonClass, action, urlFieldId) {
+                    $(buttonClass).click(function() {
+                        const $button = $(this);
+                        const $spinner = $button.next('.spinner');
+                        const url = $(urlFieldId).val();
+
+                        $button.prop('disabled', true);
+                        $spinner.addClass('is-active');
+
+                        $.post(ajaxurl, {
+                            action: action,
+                            url: url,
+                            nonce: '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>'
+                        }, function(response) {
+                            if (response.success) {
+                                alert('Verbinding succesvol!');
+                            } else {
+                                alert('Verbinding mislukt: ' + (response.data || 'Onbekende fout'));
+                            }
+                        }).fail(function() {
+                            alert('Netwerkfout bij het testen van de verbinding.');
+                        }).always(function() {
+                            $button.prop('disabled', false);
+                            $spinner.removeClass('is-active');
+                        });
+                    });
+                }
+
+                handleConnectionTest('.test-comfyui-connection', 'test_comfyui_connection', '#ai_blogpost_comfyui_api_url');
+                handleConnectionTest('.test-lm-connection', 'test_lm_studio', '#ai_blogpost_lm_api_url');
+
+                // Refresh models
+                $('#refresh-models').click(function() {
+                    var $button = $(this);
+                    var $spinner = $button.next('.spinner');
+
+                    $button.prop('disabled', true);
+                    $spinner.addClass('is-active');
+
+                    $.post(ajaxurl, {
+                        action: 'refresh_openai_models',
+                        nonce: '<?php echo wp_create_nonce("refresh_models_nonce"); ?>'
+                    }, function(response) {
+                        if (response.success) {
+                            location.reload();
+                        } else {
+                            alert('Mislukt om modellen op te halen. Controleer je API-sleutel.');
+                        }
+                    }).always(function() {
+                        $button.prop('disabled', false);
+                        $spinner.removeClass('is-active');
+                    });
+                });
+            });
+        </script>
+    </div>
+    <?php
 }
 
 /**
  * Display general settings section
  */
 function display_general_settings() {
-    echo '<table class="form-table">';
-
-    // Language Selection
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_language">Content Language</label></th>';
-    echo '<td>';
-    echo '<select name="ai_blogpost_language" id="ai_blogpost_language">';
-    $language = get_cached_option('ai_blogpost_language', 'en');
-    $languages = array(
-        'en' => 'English',
-        'nl' => 'Nederlands',
-        'de' => 'Deutsch',
-        'fr' => 'Français',
-        'es' => 'Español'
-    );
-    foreach ($languages as $code => $name) {
-        echo '<option value="' . esc_attr($code) . '" ' . selected($language, $code, false) . '>' . esc_html($name) . '</option>';
-    }
-    echo '</select>';
-    echo '<p class="description">Select the language for generated content</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Post Frequency
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_post_frequency">Post Frequency</label></th>';
-    echo '<td>';
-    echo '<select name="ai_blogpost_post_frequency" id="ai_blogpost_post_frequency">';
-    $frequency = get_cached_option('ai_blogpost_post_frequency', 'daily');
-    echo '<option value="daily" ' . selected($frequency, 'daily', false) . '>Daily</option>';
-    echo '<option value="weekly" ' . selected($frequency, 'weekly', false) . '>Weekly</option>';
-    echo '</select>';
-    echo '<p class="description">How often should new posts be generated?</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Custom Categories
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_custom_categories">Categories</label></th>';
-    echo '<td>';
-    echo '<textarea name="ai_blogpost_custom_categories" id="ai_blogpost_custom_categories" rows="5" class="large-text code">';
-    echo esc_textarea(get_cached_option('ai_blogpost_custom_categories', 'tarot'));
-    echo '</textarea>';
-    echo '<p class="description">Enter categories (one per line) that will be used for post generation</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    echo '</table>';
+    ?>
+    <table class="form-table">
+        <tr>
+            <th><label for="ai_blogpost_language">Content Taal</label></th>
+            <td>
+                <select name="ai_blogpost_language" id="ai_blogpost_language">
+                    <?php
+                    $language = get_cached_option('ai_blogpost_language', 'en');
+                    $languages = ['en' => 'English', 'nl' => 'Nederlands', 'de' => 'Deutsch', 'fr' => 'Français', 'es' => 'Español'];
+                    foreach ($languages as $code => $name) {
+                        echo '<option value="' . esc_attr($code) . '" ' . selected($language, $code, false) . '>' . esc_html($name) . '</option>';
+                    }
+                    ?>
+                </select>
+                <p class="description">Kies de taal voor gegenereerde content.</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="ai_blogpost_post_frequency">Postfrequentie</label></th>
+            <td>
+                <select name="ai_blogpost_post_frequency" id="ai_blogpost_post_frequency">
+                    <?php $frequency = get_cached_option('ai_blogpost_post_frequency', 'daily'); ?>
+                    <option value="daily" <?php selected($frequency, 'daily'); ?>>Dagelijks</option>
+                    <option value="weekly" <?php selected($frequency, 'weekly'); ?>>Wekelijks</option>
+                </select>
+                <p class="description">Hoe vaak moeten nieuwe posts worden gegenereerd?</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="ai_blogpost_custom_categories">Categorieën</label></th>
+            <td>
+                <textarea name="ai_blogpost_custom_categories" id="ai_blogpost_custom_categories" rows="5" class="large-text code"><?php echo esc_textarea(get_cached_option('ai_blogpost_custom_categories', 'tarot')); ?></textarea>
+                <p class="description">Voer categorieën in (één per regel) voor postgeneratie.</p>
+            </td>
+        </tr>
+    </table>
+    <?php
 }
 
 /**
  * Display text generation settings section
  */
 function display_text_settings() {
-    echo '<table class="form-table">';
+    ?>
+    <table class="form-table">
+        <tr>
+            <th><label for="ai_blogpost_api_key">OpenAI API Sleutel</label></th>
+            <td>
+                <input type="password" name="ai_blogpost_api_key" id="ai_blogpost_api_key" class="regular-text" value="<?php echo esc_attr(get_cached_option('ai_blogpost_api_key')); ?>">
+                <p class="description">Jouw OpenAI API-sleutel voor tekstgeneratie.</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="ai_blogpost_model">GPT Model</label></th>
+            <td>
+                <?php display_model_dropdown('gpt'); ?>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="ai_blogpost_temperature">Temperatuur</label></th>
+            <td>
+                <input type="number" step="0.1" min="0" max="2" name="ai_blogpost_temperature" id="ai<|control467|>
 
-    // OpenAI API Key
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_api_key">OpenAI API Key</label></th>';
-    echo '<td>';
-    echo '<input type="password" name="ai_blogpost_api_key" id="ai_blogpost_api_key" class="regular-text" value="' . esc_attr(get_cached_option('ai_blogpost_api_key')) . '">';
-    echo '<p class="description">Your OpenAI API key for text generation</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Model Selection
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_model">GPT Model</label></th>';
-    echo '<td>';
-    display_model_dropdown('gpt');
-    echo '</td>';
-    echo '</tr>';
-
-    // Temperature
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_temperature">Temperature</label></th>';
-    echo '<td>';
-    echo '<input type="number" step="0.1" min="0" max="2" name="ai_blogpost_temperature" id="ai_blogpost_temperature" value="' . esc_attr(get_cached_option('ai_blogpost_temperature', '0.7')) . '">';
-    echo '<p class="description">Controls randomness (0 = deterministic, 2 = very random)</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Max Tokens
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_max_tokens">Max Tokens</label></th>';
-    echo '<td>';
-    echo '<input type="number" name="ai_blogpost_max_tokens" id="ai_blogpost_max_tokens" 
-        value="' . esc_attr(get_cached_option('ai_blogpost_max_tokens', '2048')) . '"
-        min="100" max="4096">';
-    echo '<p class="description">Maximum length of generated text (max 4096 for safe operation)</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // System Role
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_role">System Role</label></th>';
-    echo '<td>';
-    echo '<textarea name="ai_blogpost_role" id="ai_blogpost_role" rows="3" class="large-text code">';
-    echo esc_textarea(get_cached_option('ai_blogpost_role', 'You are a professional blog writer. Write engaging, SEO-friendly content about the given topic.'));
-    echo '</textarea>';
-    echo '<p class="description">Define the AI\'s role and writing style</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Content Template
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_prompt">Content Template</label></th>';
-    echo '<td>';
-    echo '<textarea name="ai_blogpost_prompt" id="ai_blogpost_prompt" rows="4" class="large-text code">';
-    echo esc_textarea(get_cached_option('ai_blogpost_prompt', 
-        "Write a blog post about [topic]. Structure the content as follows:
-
-||Title||: Create an engaging, SEO-friendly title
-
-||Content||: Write the main content here, using proper HTML structure:
-- Use <article> tags to wrap the content
-- Use <h1>, <h2> for headings
-- Use <p> for paragraphs
-- Include relevant subheadings
-- Add a strong conclusion
-
-||Category||: Suggest the most appropriate category for this post"));
-    echo '</textarea>';
-
-    // Add template guide
-    echo '<div class="template-guide" style="margin-top: 10px; padding: 15px; background: #f8f9fa; border: 1px solid #e2e4e7; border-radius: 4px;">';
-    echo '<h4 style="margin-top: 0;">Content Structure Guide</h4>';
-    echo '<p class="description">Use these section markers to structure the content:</p>';
-    echo '<ul style="margin: 10px 0 0 20px; list-style-type: disc;">';
-    echo '<li><code>||Title||:</code> - The blog post title</li>';
-    echo '<li><code>||Content||:</code> - The main content (wrapped in <code><article></code> tags)</li>';
-    echo '<li><code>||Category||:</code> - The suggested category</li>';
-    echo '</ul>';
-    echo '<p class="description" style="margin-top: 10px;"><strong>Tips:</strong></p>';
-    echo '<ul style="margin: 5px 0 0 20px; list-style-type: disc;">';
-    echo '<li>Use [topic] in your prompt to reference the selected category</li>';
-    echo '<li>Add specific instructions about tone, style, or length in the System Role</li>';
-    echo '<li>Use HTML tags for proper content structure</li>';
-    echo '<li>Include SEO best practices in your instructions</li>';
-    echo '</ul>';
-    echo '</div>';
-    echo '</td>';
-    echo '</tr>';
-
-    add_refresh_models_button();
-
-    // LM Studio Section
-    echo '<tr>';
-    echo '<th colspan="2"><h3>LM Studio Integration</h3></th>';
-    echo '</tr>';
-
-    // Enable LM Studio
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_lm_enabled">Enable LM Studio</label></th>';
-    echo '<td>';
-    echo '<input type="checkbox" name="ai_blogpost_lm_enabled" id="ai_blogpost_lm_enabled" value="1" ' .
-         checked(get_cached_option('ai_blogpost_lm_enabled', 0), 1, false) . '>';
-    echo '<p class="description">Enable local LM Studio integration for text generation</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // LM Studio API URL
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_lm_api_url">LM Studio API URL</label></th>';
-    echo '<td>';
-    echo '<input type="url" name="ai_blogpost_lm_api_url" id="ai_blogpost_lm_api_url" class="regular-text" value="' .
-         esc_attr(get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234/v1')) . '">';
-    echo '<button type="button" class="button test-lm-connection">Test Connection</button>';
-    echo '<span class="spinner" style="float: none; margin-left: 4px;"></span>';
-    echo '<p class="description">Usually http://localhost:1234/v1</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    echo '</table>';
+_blogpost_temperature" value="<?php echo esc_attr(get_cached_option('ai_blogpost_temperature', '0.7')); ?>">
+                <p class="description">Controleert willekeur (0 = deterministisch, 2 = zeer willekeurig).</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="ai_blogpost_max_tokens">Max Tokens</label></th>
+            <td>
+                <input type="number" name="ai_blogpost_max_tokens" id="ai_blogpost_max_tokens" value="<?php echo esc_attr(get_cached_option('ai_blogpost_max_tokens', '2048')); ?>" min="100" max="4096">
+                <p class="description">Maximale lengte van gegenereerde tekst (max 4096).</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="ai_blogpost_role">Systeemrol</label></th>
+            <td>
+                <textarea name="ai_blogpost_role" id="ai_blogpost_role" rows="3" class="large-text code"><?php echo esc_textarea(get_cached_option('ai_blogpost_role', 'You are a professional blog writer. Write engaging, SEO-friendly content about the given topic.')); ?></textarea>
+                <p class="description">Definieer de rol en schrijfstijl van de AI.</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="ai_blogpost_prompt">Content Sjabloon</label></th>
+            <td>
+                <textarea name="ai_blogpost_prompt" id="ai_blogpost_prompt" rows="4" class="large-text code"><?php echo esc_textarea(get_cached_option('ai_blogpost_prompt', "Write a blog post about [topic]. Structure the content as follows:\n\n||Title||: Create an engaging, SEO-friendly title\n\n||Content||: Write the main content here, using proper HTML structure:\n- Use <article> tags to wrap the content\n- Use <h1>, <h2> for headings\n- Use <p> for paragraphs\n- Include relevant subheadings\n- Add a strong conclusion\n\n||Category||: Suggest the most appropriate category for this post")); ?></textarea>
+                <div class="template-guide">
+                    <h4>Content Structuur Gids</h4>
+                    <p class="description">Gebruik deze sectiemarkeringen om de content te structureren:</p>
+                    <ul>
+                        <li><code>||Title||:</code> - De titel van het blogbericht</li>
+                        <li><code>||Content||:</code> - De hoofdinhoud (in <code><article></code> tags)</li>
+                        <li><code>||Category||:</code> - De voorgestelde categorie</li>
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        <?php add_refresh_models_button(); ?>
+        <tr>
+            <th colspan="2"><h3>LM Studio Integratie</h3></th>
+        </tr>
+        <tr>
+            <th><label for="ai_blogpost_lm_enabled">LM Studio Inschakelen</label></th>
+            <td>
+                <input type="checkbox" name="ai_blogpost_lm_enabled" id="ai_blogpost_lm_enabled" value="1" <?php checked(get_cached_option('ai_blogpost_lm_enabled', 0), 1); ?>>
+                <p class="description">Schakel lokale LM Studio integratie in.</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="ai_blogpost_lm_api_url">LM Studio API URL</label></th>
+            <td>
+                <input type="url" name="ai_blogpost_lm_api_url" id="ai_blogpost_lm_api_url" class="regular-text" value="<?php echo esc_attr(get_cached_option('ai_blogpost_lm_api_url', 'http://localhost:1234/v1')); ?>">
+                <button type="button" class="button test-lm-connection">Test Verbinding</button>
+                <span class="spinner"></span>
+                <p class="description">Meestal http://localhost:1234/v1</p>
+            </td>
+        </tr>
+    </table>
+    <?php
 }
 
 /**
  * Display image generation settings section
  */
 function display_image_settings() {
-    echo '<div class="settings-section">';
-    echo '<h2>Featured Image Generation</h2>';
-
-    // Image Generation Type with improved styling
-    echo '<div class="image-generation-selector" style="margin-bottom: 20px;">';
     $generation_type = get_cached_option('ai_blogpost_image_generation_type', 'dalle');
-    echo '<div class="generation-type-options" style="display: flex; gap: 20px;">';
-
-    // DALL-E Option
-    echo '<div class="generation-option" style="flex: 1; padding: 15px; border: 1px solid #ccc; border-radius: 5px; ' .
-         ($generation_type === 'dalle' ? 'background: #f0f7ff; border-color: #2271b1;' : '') . '">';
-    echo '<label style="display: block; margin-bottom: 10px;">';
-    echo '<input type="radio" name="ai_blogpost_image_generation_type" value="dalle" ' .
-         checked($generation_type, 'dalle', false) . ' style="margin-right: 8px;">';
-    echo '<strong>DALL-E</strong></label>';
-    echo '<p class="description" style="margin: 0;">Use OpenAI\'s DALL-E for AI image generation</p>';
-    echo '</div>';
-
-    // ComfyUI Option
-    echo '<div class="generation-option" style="flex: 1; padding: 15px; border: 1px solid #ccc; border-radius: 5px; ' .
-         ($generation_type === 'comfyui' ? 'background: #f0f7ff; border-color: #2271b1;' : '') . '">';
-    echo '<label style="display: block; margin-bottom: 10px;">';
-    echo '<input type="radio" name="ai_blogpost_image_generation_type" value="comfyui" ' .
-         checked($generation_type, 'comfyui', false) . ' style="margin-right: 8px;">';
-    echo '<strong>ComfyUI</strong></label>';
-    echo '<p class="description" style="margin: 0;">Use local ComfyUI for advanced image generation</p>';
-    echo '</div>';
-
-    echo '</div>'; // Close generation-type-options
-    echo '</div>'; // Close image-generation-selector
-
-    // DALL-E Settings
-    echo '<div class="dalle-settings" style="display: ' . ($generation_type === 'dalle' ? 'block' : 'none') . ';">';
-    echo '<h3 style="margin-top: 0;">DALL-E Settings</h3>';
-    echo '<table class="form-table">';
-
-    // DALL-E API Key
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_dalle_api_key">API Key</label></th>';
-    echo '<td>';
-    echo '<input type="password" name="ai_blogpost_dalle_api_key" id="ai_blogpost_dalle_api_key" class="regular-text" value="' .
-         esc_attr(get_cached_option('ai_blogpost_dalle_api_key')) . '">';
-    echo '<p class="description">Your OpenAI API key for DALL-E image generation</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // DALL-E Model
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_dalle_model">Model</label></th>';
-    echo '<td>';
-    display_model_dropdown('dalle');
-    echo '</td>';
-    echo '</tr>';
-
-    // DALL-E Prompt Template
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_dalle_prompt_template">Prompt Template</label></th>';
-    echo '<td>';
-    echo '<textarea name="ai_blogpost_dalle_prompt_template" id="ai_blogpost_dalle_prompt_template" rows="3" class="large-text code">';
-    echo esc_textarea(get_cached_option('ai_blogpost_dalle_prompt_template',
-        'A professional blog header image for [category], modern style, clean design, subtle symbolism'));
-    echo '</textarea>';
-    echo '<p class="description">Use [category] as placeholder for the blog category</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    echo '</table>';
-    echo '</div>'; // Close dalle-settings
-
-    // ComfyUI Settings
-    echo '<div class="comfyui-settings" style="display: ' . ($generation_type === 'comfyui' ? 'block' : 'none') . ';">';
-    echo '<h3 style="margin-top: 0;">ComfyUI Settings</h3>';
-    echo '<table class="form-table">';
-
-    // ComfyUI API URL
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_comfyui_api_url">Server URL</label></th>';
-    echo '<td>';
-    $comfyui_url = get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188');
-    echo '<input type="url" name="ai_blogpost_comfyui_api_url" id="ai_blogpost_comfyui_api_url" class="regular-text" value="' .
-         esc_attr($comfyui_url) . '">';
-    echo '<button type="button" class="button test-comfyui-connection">Test Connection</button>';
-    echo '<span class="spinner" style="float: none; margin-left: 4px;"></span>';
-    echo '<p class="description">Usually http://localhost:8188</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Workflow Upload
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_comfyui_workflow_upload">Upload Workflow JSON</label></th>';
-    echo '<td>';
-    echo '<input type="file" name="ai_blogpost_comfyui_workflow_upload" id="ai_blogpost_comfyui_workflow_upload">';
-    echo '<p class="description">Upload een ComfyUI workflow JSON-bestand</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Workflow Naam
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_comfyui_workflow_name">Workflow Naam</label></th>';
-    echo '<td>';
-    echo '<input type="text" name="ai_blogpost_comfyui_workflow_name" id="ai_blogpost_comfyui_workflow_name" class="regular-text">';
-    echo '<p class="description">Geef een unieke naam voor deze workflow</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Workflow Selectie
-    $workflows = get_option('ai_blogpost_comfyui_workflows', []);
-    if (!empty($workflows)) {
-        echo '<tr>';
-        echo '<th><label for="ai_blogpost_comfyui_default_workflow">Standaard Workflow</label></th>';
-        echo '<td>';
-        echo '<select name="ai_blogpost_comfyui_default_workflow" id="ai_blogpost_comfyui_default_workflow">';
-        foreach ($workflows as $name => $data) {
-            echo '<option value="' . esc_attr($name) . '" ' . selected(get_option('ai_blogpost_comfyui_default_workflow'), $name, false) . '>' . esc_html($name) . '</option>';
-        }
-        echo '</select>';
-        echo '<p class="description">Kies de standaard workflow voor beeldgeneratie</p>';
-        echo '</td>';
-        echo '</tr>';
-    }
-
-    echo '</table>';
-    echo '</div>'; // Close comfyui-settings
-
-    echo '</div>'; // Close settings-section
-
-    // Updated JavaScript for toggling sections
     ?>
-    <script>
-    jQuery(document).ready(function($) {
-        // Add transition styles
-        $('<style>')
-            .text(`
-                .generation-option {
-                    transition: all 0.3s ease;
-                    cursor: pointer;
-                }
-                .generation-option:hover {
-                    background: #f0f7ff;
-                    border-color: #2271b1;
-                }
-                .dalle-settings, .comfyui-settings {
-                    transition: opacity 0.3s ease;
-                }
-            `)
-            .appendTo('head');
+    <div class="image-generation-selector">
+        <div class="generation-type-options" style="display: flex; gap: 20px;">
+            <div class="generation-option" style="<?php echo $generation_type === 'dalle' ? 'background: #f0f7ff; border-color: #2271b1;' : ''; ?>">
+                <label>
+                    <input type="radio" name="ai_blogpost_image_generation_type" value="dalle" <?php checked($generation_type, 'dalle'); ?>>
+                    <strong>DALL-E</strong>
+                </label>
+                <p class="description">Gebruik OpenAI's DALL-E voor afbeeldingsgeneratie.</p>
+            </div>
+            <div class="generation-option" style="<?php echo $generation_type === 'comfyui' ? 'background: #f0f7ff; border-color: #2271b1;' : ''; ?>">
+                <label>
+                    <input type="radio" name="ai_blogpost_image_generation_type" value="comfyui" <?php checked($generation_type, 'comfyui'); ?>>
+                    <strong>ComfyUI</strong>
+                </label>
+                <p class="description">Gebruik lokale ComfyUI voor afbeeldingsgeneratie.</p>
+            </div>
+        </div>
+    </div>
 
-        // Handle generation type selection
-        $('input[name="ai_blogpost_image_generation_type"]').change(function() {
-            var type = $(this).val();
+    <!-- DALL-E Settings -->
+    <div class="dalle-settings" style="display: <?php echo $generation_type === 'dalle' ? 'block' : 'none'; ?>;">
+        <h3>DALL-E Instellingen</h3>
+        <table class="form-table">
+            <tr>
+                <th><label for="ai_blogpost_dalle_api_key">API Sleutel</label></th>
+                <td>
+                    <input type="password" name="ai_blogpost_dalle_api_key" id="ai_blogpost_dalle_api_key" class="regular-text" value="<?php echo esc_attr(get_cached_option('ai_blogpost_dalle_api_key')); ?>">
+                </td>
+            </tr>
+            <tr>
+                <th><label for="ai_blogpost_dalle_model">Model</label></th>
+                <td>
+                    <?php display_model_dropdown('dalle'); ?>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="ai_blogpost_dalle_size">Grootte</label></th>
+                <td>
+                    <select name="ai_blogpost_dalle_size" id="ai_blogpost_dalle_size">
+                        <?php
+                        $size = get_cached_option('ai_blogpost_dalle_size', '1024x1024');
+                        $sizes = ['1024x1024', '1792x1024', '1024x1792'];
+                        foreach ($sizes as $s) {
+                            echo '<option value="' . esc_attr($s) . '" ' . selected($size, $s, false) . '>' . esc_html($s) . '</option>';
+                        }
+                        ?>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="ai_blogpost_dalle_style">Stijl</label></th>
+                <td>
+                    <select name="ai_blogpost_dalle_style" id="ai_blogpost_dalle_style">
+                        <?php
+                        $style = get_cached_option('ai_blogpost_dalle_style', 'vivid');
+                        $styles = ['vivid' => 'Levendig', 'natural' => 'Natuurlijk'];
+                        foreach ($styles as $value => $label) {
+                            echo '<option value="' . esc_attr($value) . '" ' . selected($style, $value, false) . '>' . esc_html($label) . '</option>';
+                        }
+                        ?>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="ai_blogpost_dalle_quality">Kwaliteit</label></th>
+                <td>
+                    <select name="ai_blogpost_dalle_quality" id="ai_blogpost_dalle_quality">
+                        <?php
+                        $quality = get_cached_option('ai_blogpost_dalle_quality', 'standard');
+                        $qualities = ['standard' => 'Standaard', 'hd' => 'HD'];
+                        foreach ($qualities as $value => $label) {
+                            echo '<option value="' . esc_attr($value) . '" ' . selected($quality, $value, false) . '>' . esc_html($label) . '</option>';
+                        }
+                        ?>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="ai_blogpost_dalle_prompt_template">Prompt Sjabloon</label></th>
+                <td>
+                    <textarea name="ai_blogpost_dalle_prompt_template" id="ai_blogpost_dalle_prompt_template" rows="3" class="large-text code"><?php echo esc_textarea(get_cached_option('ai_blogpost_dalle_prompt_template', 'A professional blog header image for [category], modern style, clean design, subtle symbolism')); ?></textarea>
+                    <p class="description">Gebruik [category] als placeholder.</p>
+                </td>
+            </tr>
+        </table>
+    </div>
 
-            // Update option styling
-            $('.generation-option').css({
-                'background': 'none',
-                'border-color': '#ccc'
-            });
-            $(this).closest('.generation-option').css({
-                'background': '#f0f7ff',
-                'border-color': '#2271b1'
-            });
-
-            // Smooth transition between settings panels
-            if (type === 'dalle') {
-                $('.comfyui-settings').css('opacity', 0).hide();
-                $('.dalle-settings').css('opacity', 0).show().animate({opacity: 1}, 300);
-            } else if (type === 'comfyui') {
-                $('.dalle-settings').css('opacity', 0).hide();
-                $('.comfyui-settings').css('opacity', 0).show().animate({opacity: 1}, 300);
+    <!-- ComfyUI Settings -->
+    <div class="comfyui-settings" style="display: <?php echo $generation_type === 'comfyui' ? 'block' : 'none'; ?>;">
+        <h3>ComfyUI Instellingen</h3>
+        <table class="form-table">
+            <tr>
+                <th><label for="ai_blogpost_comfyui_api_url">Server URL</label></th>
+                <td>
+                    <input type="url" name="ai_blogpost_comfyui_api_url" id="ai_blogpost_comfyui_api_url" class="regular-text" value="<?php echo esc_attr(get_cached_option('ai_blogpost_comfyui_api_url', 'http://localhost:8188')); ?>">
+                    <button type="button" class="button test-comfyui-connection">Test Verbinding</button>
+                    <span class="spinner"></span>
+                    <p class="description">Meestal http://localhost:8188</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="ai_blogpost_comfyui_workflow_upload">Workflow JSON Upload</label></th>
+                <td>
+                    <input type="file" name="ai_blogpost_comfyui_workflow_upload" id="ai_blogpost_comfyui_workflow_upload">
+                    <p class="description">Upload een ComfyUI workflow JSON-bestand.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="ai_blogpost_comfyui_workflow_name">Workflow Naam</label></th>
+                <td>
+                    <input type="text" name="ai_blogpost_comfyui_workflow_name" id="ai_blogpost_comfyui_workflow_name" class="regular-text" value="">
+                    <p class="description">Geef een unieke naam voor deze workflow.</p>
+                </td>
+            </tr>
+            <?php
+            $workflows = get_option('ai_blogpost_comfyui_workflows', []);
+            if (!empty($workflows)) {
+                ?>
+                <tr>
+                    <th><label for="ai_blogpost_comfyui_default_workflow">Standaard Workflow</label></th>
+                    <td>
+                        <select name="ai_blogpost_comfyui_default_workflow" id="ai_blogpost_comfyui_default_workflow">
+                            <option value="">-- Selecteer een workflow --</option>
+                            <?php
+                            $default_workflow = get_cached_option('ai_blogpost_comfyui_default_workflow', '');
+                            foreach ($workflows as $name => $data) {
+                                echo '<option value="' . esc_attr($name) . '" ' . selected($default_workflow, $name, false) . '>' . esc_html($name) . '</option>';
+                            }
+                            ?>
+                        </select>
+                        <p class="description">Kies de standaard workflow. Als geen geselecteerd, wordt de eerste geüploade gebruikt.</p>
+                    </td>
+                </tr>
+                <?php
+            } else {
+                echo '<tr><td colspan="2"><p class="description">Geen workflows geüpload. Upload een workflow om te beginnen.</p></td></tr>';
             }
-        });
-
-        // Make entire option box clickable
-        $('.generation-option').click(function() {
-            $(this).find('input[type="radio"]').prop('checked', true).trigger('change');
-        });
-
-        // Enhanced connection test handling
-        $('.test-comfyui-connection').click(function() {
-            var $button = $(this);
-            var $spinner = $button.next('.spinner');
-            var apiUrl = $('#ai_blogpost_comfyui_api_url').val();
-
-            var $notification = $('<div>')
-                .css({
-                    'position': 'fixed',
-                    'top': '20px',
-                    'right': '20px',
-                    'padding': '10px 20px',
-                    'border-radius': '4px',
-                    'background': '#fff',
-                    'box-shadow': '0 2px 5px rgba(0,0,0,0.2)',
-                    'z-index': 9999,
-                    'display': 'none'
-                })
-                .appendTo('body');
-
-            $button.prop('disabled', true);
-            $spinner.addClass('is-active');
-
-            $.post(ajaxurl, {
-                action: 'test_comfyui_connection',
-                url: apiUrl,
-                nonce: '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>'
-            }, function(response) {
-                if (response.success) {
-                    $notification
-                        .html('✅ ComfyUI connected successfully!')
-                        .css('background', '#e7f5ea')
-                        .fadeIn()
-                        .delay(3000)
-                        .fadeOut(function() { $(this).remove(); });
-                } else {
-                    $notification
-                        .html('❌ ' + response.data)
-                        .css('background', '#fde8e8')
-                        .fadeIn()
-                        .delay(3000)
-                        .fadeOut(function() { $(this).remove(); });
-                }
-            }).fail(function() {
-                $notification
-                    .html('❌ Connection failed. Please check the server URL.')
-                    .css('background', '#fde8e8')
-                    .fadeIn()
-                    .delay(3000)
-                    .fadeOut(function() { $(this).remove(); });
-            }).always(function() {
-                $button.prop('disabled', false);
-                $spinner.removeClass('is-active');
-            });
-        });
-    });
-    </script>
+            ?>
+        </table>
+    </div>
     <?php
 }
 
@@ -668,14 +545,12 @@ function display_model_dropdown($type = 'gpt') {
 
     echo '<select name="' . ($type === 'gpt' ? 'ai_blogpost_model' : 'ai_blogpost_dalle_model') . '">';
     foreach ($models as $model) {
-        echo '<option value="' . esc_attr($model) . '" ' . selected($current_model, $model, false) . '>';
-        echo esc_html($model);
-        echo '</option>';
+        echo '<option value="' . esc_attr($model) . '" ' . selected($current_model, $model, false) . '>' . esc_html($model) . '</option>';
     }
     echo '</select>';
 
     if (empty($stored_models)) {
-        echo '<p class="description">Save API key to fetch available models</p>';
+        echo '<p class="description">Sla de API-sleutel op om beschikbare modellen op te halen.</p>';
     }
 }
 
@@ -683,42 +558,15 @@ function display_model_dropdown($type = 'gpt') {
  * Add refresh models button to settings
  */
 function add_refresh_models_button() {
-    echo '<tr>';
-    echo '<th>Available Models</th>';
-    echo '<td>';
-    echo '<button type="button" class="button" id="refresh-models">Refresh Available Models</button>';
-    echo '<span class="spinner" style="float: none; margin-left: 4px;"></span>';
-    echo '<p class="description">Click to fetch available models from OpenAI</p>';
-    echo '</td>';
-    echo '</tr>';
-
-    // Add JavaScript for the refresh button
     ?>
-    <script>
-    jQuery(document).ready(function($) {
-        $('#refresh-models').click(function() {
-            var $button = $(this);
-            var $spinner = $button.next('.spinner');
-
-            $button.prop('disabled', true);
-            $spinner.addClass('is-active');
-
-            $.post(ajaxurl, {
-                action: 'refresh_openai_models',
-                nonce: '<?php echo wp_create_nonce("refresh_models_nonce"); ?>'
-            }, function(response) {
-                if (response.success) {
-                    location.reload();
-                } else {
-                    alert('Failed to fetch models. Please check your API key.');
-                }
-            }).always(function() {
-                $button.prop('disabled', false);
-                $spinner.removeClass('is-active');
-            });
-        });
-    });
-    </script>
+    <tr>
+        <th>Beschikbare Modellen</th>
+        <td>
+            <button type="button" class="button" id="refresh-models">Vernieuw Beschikbare Modellen</button>
+            <span class="spinner"></span>
+            <p class="description">Klik om beschikbare modellen van OpenAI op te halen.</p>
+        </td>
+    </tr>
     <?php
 }
 
@@ -737,68 +585,31 @@ add_action('wp_ajax_refresh_openai_models', 'handle_refresh_models');
  */
 function handle_lm_studio_test() {
     check_ajax_referer('ai_blogpost_nonce', 'nonce');
-
     $api_url = sanitize_text_field($_POST['url']);
     $api_url = rtrim($api_url, '/') . '/v1';
 
     try {
-        ai_blogpost_debug_log('Testing LM Studio connection:', [
-            'url' => $api_url
-        ]);
-
         $response = wp_remote_get($api_url . '/models', [
-            'headers' => [
-                'Content-Type' => 'application/json'
-            ],
+            'headers' => ['Content-Type' => 'application/json'],
             'timeout' => 30,
             'sslverify' => false
         ]);
 
         if (is_wp_error($response)) {
-            ai_blogpost_debug_log('LM Studio connection failed:', $response->get_error_message());
             wp_send_json_error('Connection failed: ' . $response->get_error_message());
             return;
         }
 
-        $body = wp_remote_retrieve_body($response);
-        ai_blogpost_debug_log('LM Studio raw response:', $body);
-
-        $data = json_decode($body, true);
-
-        $models = [];
-        if (!empty($data['data'])) {
-            $models = $data['data'];
-        } elseif (is_array($data)) {
-            $models = array_map(function($model) {
-                return is_array($model) ? $model : ['id' => $model];
-            }, $data);
-        }
-
-        if (empty($models)) {
-            ai_blogpost_debug_log('No models found in LM Studio response:', $data);
-            wp_send_json_error('No models found in LM Studio');
+        $data = json_decode(wp_remote_retrieve_body($response), true);
+        if (empty($data['data']) && !is_array($data)) {
+            wp_send_json_error('Geen modellen gevonden in LM Studio.');
             return;
         }
 
-        update_option('ai_blogpost_available_lm_models', $models);
+        update_option('ai_blogpost_available_lm_models', $data['data'] ?? $data);
         update_option('ai_blogpost_lm_api_url', rtrim($api_url, '/v1'));
-
-        ai_blogpost_log_api_call('LM Studio Test', true, [
-            'url' => $api_url,
-            'status' => 'Connection successful',
-            'models_found' => count($models),
-            'models' => array_map(function($model) {
-                return isset($model['id']) ? $model['id'] : $model;
-            }, $models)
-        ]);
-
-        wp_send_json_success([
-            'message' => 'Connection successful',
-            'models' => $models
-        ]);
-
+        wp_send_json_success(['message' => 'Connection successful']);
     } catch (Exception $e) {
-        ai_blogpost_debug_log('LM Studio error:', $e->getMessage());
         wp_send_json_error('Error: ' . $e->getMessage());
     }
 }
@@ -809,58 +620,25 @@ add_action('wp_ajax_test_lm_studio', 'handle_lm_studio_test');
  */
 function handle_comfyui_test() {
     check_ajax_referer('ai_blogpost_nonce', 'nonce');
-
     $api_url = sanitize_text_field($_POST['url']);
     $api_url = rtrim($api_url, '/');
 
     try {
-        ai_blogpost_debug_log('Testing ComfyUI connection:', [
-            'url' => $api_url
-        ]);
-
-        $response = wp_remote_get($api_url . '/queue', [
-            'timeout' => 30,
-            'sslverify' => false
-        ]);
-
+        $response = wp_remote_get($api_url . '/queue', ['timeout' => 30, 'sslverify' => false]);
         if (is_wp_error($response)) {
-            ai_blogpost_debug_log('ComfyUI connection failed:', $response->get_error_message());
             wp_send_json_error('Connection failed: ' . $response->get_error_message());
             return;
         }
 
-        $queue_data = json_decode(wp_remote_retrieve_body($response), true);
-
-        $history_response = wp_remote_get($api_url . '/history', [
-            'timeout' => 30,
-            'sslverify' => false
-        ]);
-
+        $history_response = wp_remote_get($api_url . '/history', ['timeout' => 30, 'sslverify' => false]);
         if (is_wp_error($history_response)) {
-            ai_blogpost_debug_log('ComfyUI history endpoint failed:', $history_response->get_error_message());
             wp_send_json_error('Failed to access history endpoint');
             return;
         }
 
-        $history_data = json_decode(wp_remote_retrieve_body($history_response), true);
-
         update_option('ai_blogpost_comfyui_api_url', $api_url);
-
-        ai_blogpost_log_api_call('ComfyUI Test', true, [
-            'url' => $api_url,
-            'status' => 'Connection successful',
-            'queue_status' => $queue_data,
-            'history_available' => !empty($history_data)
-        ]);
-
-        wp_send_json_success([
-            'message' => 'Connection successful',
-            'queue_status' => $queue_data,
-            'history_available' => !empty($history_data)
-        ]);
-
+        wp_send_json_success(['message' => 'Connection successful']);
     } catch (Exception $e) {
-        ai_blogpost_debug_log('ComfyUI error:', $e->getMessage());
         wp_send_json_error('Error: ' . $e->getMessage());
     }
 }
