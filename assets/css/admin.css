@@ -1,0 +1,53 @@
+/* assets/css/admin.css */
+.ai-blogpost-dashboard {
+    max-width: 1200px;
+    margin: 20px auto;
+    padding: 0 20px;
+}
+
+/* Tabbladen-styling */
+#ai-blogpost-tabs {
+    margin-top: 20px;
+}
+#ai-blogpost-tabs ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    border-bottom: 1px solid #ccc;
+}
+#ai-blogpost-tabs ul li {
+    margin-right: 10px;
+}
+#ai-blogpost-tabs ul li a {
+    display: block;
+    padding: 10px 20px;
+    text-decoration: none;
+    background: #f1f1f1;
+    border: 1px solid #ccc;
+    border-bottom: none;
+    color: #333;
+    border-radius: 4px 4px 0 0;
+}
+#ai-blogpost-tabs ul li a.active,
+#ai-blogpost-tabs ul li a:hover {
+    background: #fff;
+    color: #2271b1;
+}
+.tab-content {
+    border: 1px solid #ccc;
+    padding: 20px;
+    background: #fff;
+    display: none;
+}
+.next-post-info {
+    margin-top: 10px;
+    color: #666;
+}
+
+/* Overige algemene stijlen voor de dashboard */
+.settings-sections h3 {
+    margin-top: 20px;
+    border-bottom: 1px solid #e5e5e5;
+    padding-bottom: 5px;
+}
