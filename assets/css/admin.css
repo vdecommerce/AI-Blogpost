@@ -4,7 +4,13 @@
     margin: 20px auto;
     padding: 0 20px;
 }
-
+.test-section {
+    margin-bottom: 20px;
+}
+.next-post-info {
+    margin-top: 10px;
+    color: #666;
+}
 /* Tabbladen-styling */
 #ai-blogpost-tabs {
     margin-top: 20px;
@@ -40,12 +46,6 @@
     background: #fff;
     display: none;
 }
-.next-post-info {
-    margin-top: 10px;
-    color: #666;
-}
-
-/* Overige algemene stijlen voor de dashboard */
 .settings-sections h3 {
     margin-top: 20px;
     border-bottom: 1px solid #e5e5e5;
