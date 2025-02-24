@@ -37,12 +37,11 @@ function clear_ai_blogpost_cache() {
 /**
  * Clear cache after saving settings
  */
-function ai_blogpost_after_save_settings() {
-    if (isset($_POST['option_page']) && $_POST['option_page'] === 'ai_blogpost_settings') {
+add_action('updated_option', function($option) {
+    if (strpos($option, 'ai_blogpost_') === 0) {
         clear_ai_blogpost_cache();
     }
-}
-add_action('admin_init', 'ai_blogpost_after_save_settings', 99);
+});
 
 /**
  * Get language-specific instruction for AI prompts
@@ -61,3 +60,4 @@ function get_language_instruction($language_code) {
     
     return $instructions[$language_code] ?? $instructions['en'];
 }
+
