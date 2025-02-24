@@ -10,7 +10,9 @@ function ai_blogpost_initialize_settings() {
     // Algemene instellingen
     register_setting('ai_blogpost_settings', 'ai_blogpost_language');
     register_setting('ai_blogpost_settings', 'ai_blogpost_post_frequency');
-    register_setting('ai_blogpost_settings', 'ai_blogpost_custom_categories');
+    register_setting('ai_blogpost_settings', 'ai_blogpost_custom_categories', array(
+        'sanitize_callback' => 'sanitize_textarea_field'
+    ));
 
     // Tekst generatie instellingen
     register_setting('ai_blogpost_settings', 'ai_blogpost_api_key');
@@ -20,10 +22,10 @@ function ai_blogpost_initialize_settings() {
     register_setting('ai_blogpost_settings', 'ai_blogpost_prompt');
     register_setting('ai_blogpost_settings', 'ai_blogpost_role');
 
-    // LM Studio instellingen
+    // LM Studio instellingen (geen API key nodig)
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_enabled');
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_url');
-    register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_key');
+    // register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_key'); // Niet nodig
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_model');
 
     // Keuze AI-provider (default: OpenAI)
@@ -68,8 +70,8 @@ add_action('admin_enqueue_scripts', 'ai_blogpost_admin_enqueue_scripts');
 /**
  * Toon de admin-instellingenpagina:
  * - Testsectie (bovenaan)
- * - Instellingen-tabbladen (Algemeen, Tekst, Afbeelding) én een tab voor de logs
- * Alle velden staan in één formulier zodat het opslaan weer werkt.
+ * - Instellingen-tabbladen (Algemeen, Tekst, Afbeelding, Logboeken)
+ * Alle velden zitten in één formulier zodat ze correct worden opgeslagen.
  */
 function ai_blogpost_admin_page() {
     ?>
@@ -93,7 +95,7 @@ function ai_blogpost_admin_page() {
             <?php } ?>
         </div>
         
-        <!-- Instellingenformulier inclusief tabbladen -->
+        <!-- Instellingenformulier (alle instellingen + logboeken) -->
         <form method="post" action="options.php">
             <?php settings_fields('ai_blogpost_settings'); ?>
             <?php do_settings_sections('ai_blogpost_settings'); ?>
@@ -155,7 +157,7 @@ function ai_blogpost_display_test_notice() {
 }
 
 /**
- * Algemene Instellingen: taal, post frequentie, categorieën
+ * Algemene Instellingen: taal, frequentie en categorieën
  */
 function display_general_settings() {
     echo '<table class="form-table">';
@@ -194,7 +196,12 @@ function display_general_settings() {
     echo '<tr>';
     echo '<th><label for="ai_blogpost_custom_categories">Categorieën</label></th>';
     echo '<td>';
-    echo '<textarea name="ai_blogpost_custom_categories" id="ai_blogpost_custom_categories" rows="5" class="large-text code">' . esc_textarea(get_option('ai_blogpost_custom_categories', '')) . '</textarea>';
+    // Zorg ervoor dat als de opgeslagen waarde een array is, deze wordt omgezet naar een string
+    $custom_categories = get_option('ai_blogpost_custom_categories', '');
+    if ( is_array($custom_categories) ) {
+        $custom_categories = implode("\n", $custom_categories);
+    }
+    echo '<textarea name="ai_blogpost_custom_categories" id="ai_blogpost_custom_categories" rows="5" class="large-text code">' . esc_textarea($custom_categories) . '</textarea>';
     echo '<p class="description">Geef per regel een categorie op</p>';
     echo '</td>';
     echo '</tr>';
@@ -279,13 +286,6 @@ function display_text_settings() {
     echo '<h4>LM Studio Instellingen</h4>';
     echo '<table class="form-table">';
     echo '<tr>';
-    echo '<th><label for="ai_blogpost_lm_enabled">Enable LM Studio</label></th>';
-    echo '<td>';
-    echo '<input type="checkbox" name="ai_blogpost_lm_enabled" id="ai_blogpost_lm_enabled" value="1" ' . checked(get_option('ai_blogpost_lm_enabled', 0), 1, false) . '>';
-    echo '<p class="description">Schakel LM Studio in voor tekstgeneratie</p>';
-    echo '</td>';
-    echo '</tr>';
-    echo '<tr>';
     echo '<th><label for="ai_blogpost_lm_api_url">LM Studio API URL</label></th>';
     echo '<td>';
     echo '<input type="url" name="ai_blogpost_lm_api_url" id="ai_blogpost_lm_api_url" class="regular-text" value="' . esc_attr(get_option('ai_blogpost_lm_api_url', 'http://localhost:1234/v1')) . '">';
@@ -294,13 +294,7 @@ function display_text_settings() {
     echo '<p class="description">Bijv. http://localhost:1234/v1</p>';
     echo '</td>';
     echo '</tr>';
-    echo '<tr>';
-    echo '<th><label for="ai_blogpost_lm_api_key">LM Studio API Key</label></th>';
-    echo '<td>';
-    echo '<input type="password" name="ai_blogpost_lm_api_key" id="ai_blogpost_lm_api_key" class="regular-text" value="' . esc_attr(get_option('ai_blogpost_lm_api_key')) . '">';
-    echo '<p class="description">Voer je LM Studio API key in (indien van toepassing)</p>';
-    echo '</td>';
-    echo '</tr>';
+    // Let op: voor LM Studio is er geen API key nodig.
     echo '<tr>';
     echo '<th><label for="ai_blogpost_lm_model">LM Studio Model</label></th>';
     echo '<td>';
