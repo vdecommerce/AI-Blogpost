@@ -29,6 +29,7 @@ function ai_blogpost_initialize_settings() {
     register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_api_url');
     register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_workflows');
     register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_default_workflow');
+    register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_workflow_json');
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_enabled');
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_url');
     register_setting('ai_blogpost_settings', 'ai_blogpost_lm_api_key');
@@ -49,27 +50,25 @@ add_action('admin_menu', 'ai_blogpost_admin_menu');
  */
 function ai_blogpost_admin_page() {
     // Handle workflow upload
-    if (isset($_FILES['ai_blogpost_comfyui_workflow_upload']) && $_FILES['ai_blogpost_comfyui_workflow_upload']['error'] == UPLOAD_ERR_OK) {
-        $file_tmp = $_FILES['ai_blogpost_comfyui_workflow_upload']['tmp_name'];
-        $file_content = file_get_contents($file_tmp);
-        $workflow_data = json_decode($file_content, true);
-
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        ai_blogpost_debug_log('Form submitted with POST data:', $_POST);
+        ai_blogpost_debug_log('Files uploaded:', $_FILES);
+    }
+    if (isset($_POST['ai_blogpost_comfyui_workflow_json']) && !empty($_POST['ai_blogpost_comfyui_workflow_json'])) {
+        $json_input = $_POST['ai_blogpost_comfyui_workflow_json'];
+        $workflow_data = json_decode($json_input, true);
+        
         if ($workflow_data && isset($workflow_data['nodes']) && isset($workflow_data['links'])) {
-            $workflow_name = sanitize_text_field($_POST['ai_blogpost_comfyui_workflow_name'] ?? 'Workflow_' . time());
-            if (!empty($workflow_name)) {
-                $workflows = get_option('ai_blogpost_comfyui_workflows', []);
-                $workflows[$workflow_name] = $workflow_data;
-                update_option('ai_blogpost_comfyui_workflows', $workflows);
-                clear_ai_blogpost_cache();
-                if (empty(get_option('ai_blogpost_comfyui_default_workflow'))) {
-                    update_option('ai_blogpost_comfyui_default_workflow', $workflow_name);
-                }
-                echo '<div class="notice notice-success is-dismissible"><p>Workflow succesvol geüpload als "' . esc_html($workflow_name) . '"!</p></div>';
-            } else {
-                echo '<div class="notice notice-error is-dismissible"><p>Voer een geldige naam in voor de workflow.</p></div>';
-            }
+            $workflows = get_option('ai_blogpost_comfyui_workflows', []);
+            $workflow_name = 'default'; // Vast naam, kan later dynamisch worden gemaakt
+            $workflows[$workflow_name] = $workflow_data;
+            update_option('ai_blogpost_comfyui_workflows', $workflows);
+            update_option('ai_blogpost_comfyui_default_workflow', $workflow_name);
+            clear_ai_blogpost_cache();
+            ai_blogpost_debug_log('Workflow JSON saved:', $workflow_name);
+            echo '<div class="notice notice-success is-dismissible"><p>Workflow JSON succesvol opgeslagen als "default"!</p></div>';
         } else {
-            echo '<div class="notice notice-error is-dismissible"><p>Ongeldig JSON-bestand. Zorg ervoor dat het een geldige ComfyUI-workflow is met "nodes" en "links".</p></div>';
+            echo '<div class="notice notice-error is-dismissible"><p>Ongeldige JSON. Zorg ervoor dat het een geldige ComfyUI-workflow is met "nodes" en "links".</p></div>';
         }
     }
 
@@ -478,6 +477,7 @@ function display_image_settings() {
     </div>
 
     <!-- ComfyUI Settings -->
+    ?>
     <div class="comfyui-settings" style="display: <?php echo $generation_type === 'comfyui' ? 'block' : 'none'; ?>;">
         <h3>ComfyUI Instellingen</h3>
         <table class="form-table">
@@ -491,41 +491,21 @@ function display_image_settings() {
                 </td>
             </tr>
             <tr>
-                <th><label for="ai_blogpost_comfyui_workflow_upload">Workflow JSON Upload</label></th>
+                <th><label for="ai_blogpost_comfyui_workflow_json">Workflow JSON</label></th>
                 <td>
-                    <input type="file" name="ai_blogpost_comfyui_workflow_upload" id="ai_blogpost_comfyui_workflow_upload">
-                    <p class="description">Upload een ComfyUI workflow JSON-bestand.</p>
-                </td>
-            </tr>
-            <tr>
-                <th><label for="ai_blogpost_comfyui_workflow_name">Workflow Naam</label></th>
-                <td>
-                    <input type="text" name="ai_blogpost_comfyui_workflow_name" id="ai_blogpost_comfyui_workflow_name" class="regular-text" value="">
-                    <p class="description">Geef een unieke naam voor deze workflow.</p>
+                    <?php
+                    $default_workflow_json = get_option('ai_blogpost_comfyui_workflow_json', json_encode(json_decode(file_get_contents(plugin_dir_path(__FILE__) . '../workflows/default.json'), true), JSON_PRETTY_PRINT));
+                    ?>
+                    <textarea name="ai_blogpost_comfyui_workflow_json" id="ai_blogpost_comfyui_workflow_json" rows="10" class="large-text code"><?php echo esc_textarea($default_workflow_json); ?></textarea>
+                    <p class="description">Plak hier je ComfyUI workflow JSON. Standaard is 'default.json' ingevuld.</p>
                 </td>
             </tr>
             <?php
             $workflows = get_option('ai_blogpost_comfyui_workflows', []);
             if (!empty($workflows)) {
-                ?>
-                <tr>
-                    <th><label for="ai_blogpost_comfyui_default_workflow">Standaard Workflow</label></th>
-                    <td>
-                        <select name="ai_blogpost_comfyui_default_workflow" id="ai_blogpost_comfyui_default_workflow">
-                            <option value="">-- Selecteer een workflow --</option>
-                            <?php
-                            $default_workflow = get_cached_option('ai_blogpost_comfyui_default_workflow', '');
-                            foreach ($workflows as $name => $data) {
-                                echo '<option value="' . esc_attr($name) . '" ' . selected($default_workflow, $name, false) . '>' . esc_html($name) . '</option>';
-                            }
-                            ?>
-                        </select>
-                        <p class="description">Kies de standaard workflow. Als geen geselecteerd, wordt de eerste geüploade gebruikt.</p>
-                    </td>
-                </tr>
-                <?php
+                // Bestaande workflow dropdown code hier...
             } else {
-                echo '<tr><td colspan="2"><p class="description">Geen workflows geüpload. Upload een workflow om te beginnen.</p></td></tr>';
+                echo '<tr><td colspan="2"><p class="description">Geen workflows geüpload. Gebruik het JSON-veld hierboven om een workflow toe te voegen.</p></td></tr>';
             }
             ?>
         </table>

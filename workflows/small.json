@@ -1,0 +1,10 @@
+{
+    "last_node_id": 3,
+    "last_link_id": 2,
+    "nodes": [
+        {"id": 1, "type": "CLIPTextEncode", "inputs": [{"name": "clip", "type": "CLIP", "link": 1}], "outputs": [{"name": "CONDITIONING", "type": "CONDITIONING", "links": []}], "widgets_values": ["simple test image"]},
+        {"id": 2, "type": "CheckpointLoaderSimple", "outputs": [{"name": "CLIP", "type": "CLIP", "links": [1]}], "widgets_values": ["v1-5-pruned-emaonly-fp16.safetensors"]},
+        {"id": 3, "type": "SaveImage", "inputs": [], "outputs": [], "widgets_values": ["test"]}
+    ],
+    "links": [[1, 2, 0, 1, 0, "CLIP"]]
+}
