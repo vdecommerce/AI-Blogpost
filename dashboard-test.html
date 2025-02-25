@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Blogpost Dashboard Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #23282d;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            background: #fff;
+            border: 1px solid #ccd0d4;
+            box-shadow: 0 1px 1px rgba(0,0,0,.04);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .test-section h2 {
+            margin-top: 0;
+        }
+        .test-item {
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #eee;
+            background: #f9f9f9;
+        }
+        .test-item.success {
+            border-left: 4px solid #46b450;
+        }
+        .test-item.error {
+            border-left: 4px solid #dc3232;
+        }
+        .test-item.warning {
+            border-left: 4px solid #ffb900;
+        }
+        button {
+            background: #2271b1;
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #135e96;
+        }
+        pre {
+            background: #f6f7f7;
+            padding: 10px;
+            overflow: auto;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <h1>AI Blogpost Dashboard Test</h1>
+    
+    <div class="test-section">
+        <h2>CSS Test</h2>
+        <div id="css-test-result" class="test-item">Testing CSS loading...</div>
+        <button id="test-css">Test CSS</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>JavaScript Test</h2>
+        <div id="js-test-result" class="test-item">Testing JavaScript loading...</div>
+        <button id="test-js">Test JavaScript</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Tab Navigation Test</h2>
+        <div id="tabs-test-result" class="test-item">Testing tab navigation...</div>
+        <button id="test-tabs">Test Tabs</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Environment Information</h2>
+        <pre id="environment-info">Loading environment information...</pre>
+    </div>
+    
+    <script>
+        // Simple test functions
+        document.addEventListener('DOMContentLoaded', function() {
+            // Environment info
+            const envInfo = {
+                'User Agent': navigator.userAgent,
+                'Window Size': `${window.innerWidth}x${window.innerHeight}`,
+                'Document Ready': true,
+                'jQuery Available': typeof jQuery !== 'undefined',
+                'Dashicons Available': document.querySelector('link[href*="dashicons"]') !== null
+            };
+            
+            document.getElementById('environment-info').textContent = JSON.stringify(envInfo, null, 2);
+            
+            // CSS Test
+            document.getElementById('test-css').addEventListener('click', function() {
+                const result = document.getElementById('css-test-result');
+                
+                // Create a test element
+                const testElement = document.createElement('div');
+                testElement.className = 'ai-blogpost-dashboard';
+                testElement.style.display = 'none';
+                document.body.appendChild(testElement);
+                
+                // Check if styles are applied
+                const styles = window.getComputedStyle(testElement);
+                const maxWidth = styles.getPropertyValue('max-width');
+                
+                if (maxWidth === '1200px') {
+                    result.textContent = 'CSS loaded successfully!';
+                    result.className = 'test-item success';
+                } else {
+                    result.textContent = 'CSS not loaded correctly. Expected max-width: 1200px, got: ' + maxWidth;
+                    result.className = 'test-item error';
+                }
+                
+                // Clean up
+                document.body.removeChild(testElement);
+            });
+            
+            // JavaScript Test
+            document.getElementById('test-js').addEventListener('click', function() {
+                const result = document.getElementById('js-test-result');
+                
+                if (typeof jQuery === 'undefined') {
+                    result.textContent = 'jQuery not loaded!';
+                    result.className = 'test-item error';
+                    return;
+                }
+                
+                if (typeof jQuery.fn.on !== 'function') {
+                    result.textContent = 'jQuery loaded but missing required functions!';
+                    result.className = 'test-item warning';
+                    return;
+                }
+                
+                result.textContent = 'JavaScript dependencies loaded successfully!';
+                result.className = 'test-item success';
+            });
+            
+            // Tab Navigation Test
+            document.getElementById('test-tabs').addEventListener('click', function() {
+                const result = document.getElementById('tabs-test-result');
+                
+                // Create test tabs
+                const tabsContainer = document.createElement('div');
+                tabsContainer.innerHTML = `
+                    <ul class="ai-blogpost-tabs">
+                        <li><a href="#tab1" class="active">Tab 1</a></li>
+                        <li><a href="#tab2">Tab 2</a></li>
+                    </ul>
+                    <div id="tab1" class="ai-blogpost-tab-content active">Tab 1 Content</div>
+                    <div id="tab2" class="ai-blogpost-tab-content">Tab 2 Content</div>
+                `;
+                tabsContainer.style.display = 'none';
+                document.body.appendChild(tabsContainer);
+                
+                try {
+                    // Check if tabs are styled correctly
+                    const tab = tabsContainer.querySelector('.ai-blogpost-tabs a');
+                    const tabContent = tabsContainer.querySelector('.ai-blogpost-tab-content');
+                    
+                    const tabStyles = window.getComputedStyle(tab);
+                    const contentStyles = window.getComputedStyle(tabContent);
+                    
+                    if (tabStyles.display === 'block' && contentStyles.display === 'block') {
+                        result.textContent = 'Tab styles loaded correctly!';
+                        result.className = 'test-item success';
+                    } else {
+                        result.textContent = 'Tab styles not loaded correctly.';
+                        result.className = 'test-item warning';
+                    }
+                } catch (error) {
+                    result.textContent = 'Error testing tabs: ' + error.message;
+                    result.className = 'test-item error';
+                }
+                
+                // Clean up
+                document.body.removeChild(tabsContainer);
+            });
+        });
+    </script>
+</body>
+</html>

@@ -66,6 +66,46 @@ class Plugin {
         if (is_admin()) {
             add_action('admin_menu', ['\AI_Blogpost\Settings', 'initializeMenu']);
             add_action('admin_enqueue_scripts', ['\AI_Blogpost\Settings', 'enqueueAssets']);
+            
+            // Add fallback for dashboard issues
+            add_action('admin_notices', [$this, 'checkDashboardFunctionality']);
+        }
+    }
+    
+    /**
+     * Check if dashboard is functioning properly and provide fallback if needed
+     */
+    public function checkDashboardFunctionality(): void {
+        $screen = get_current_screen();
+        if ($screen && $screen->id === 'toplevel_page_ai_blogpost') {
+            // Check if assets directory exists
+            if (!is_dir(plugin_dir_path(__FILE__) . 'assets')) {
+                echo '<div class="notice notice-error">';
+                echo '<p><strong>AI Blogpost Error:</strong> Assets directory not found. Using fallback interface.</p>';
+                echo '<p>Please ensure the plugin is installed correctly with all required files.</p>';
+                echo '</div>';
+                
+                // Add inline styles for fallback
+                echo '<style>
+                    .ai-blogpost-fallback {
+                        margin: 20px 0;
+                        padding: 20px;
+                        background: #fff;
+                        border: 1px solid #ccd0d4;
+                        box-shadow: 0 1px 1px rgba(0,0,0,.04);
+                    }
+                    .ai-blogpost-fallback h2 {
+                        margin-top: 0;
+                    }
+                </style>';
+                
+                // Add fallback JavaScript
+                echo '<script>
+                    jQuery(document).ready(function($) {
+                        console.log("AI Blogpost: Using fallback interface");
+                    });
+                </script>';
+            }
         }
     }
 }

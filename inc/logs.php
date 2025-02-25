@@ -72,49 +72,10 @@ class Logs {
         // Show most recent logs first
         $filtered_logs = array_reverse(array_slice($filtered_logs, -5));
 
-        self::outputLogStyles();
         self::outputLogTable($filtered_logs);
-    }
-    
-    /**
-     * Output CSS styles for log table
-     */
-    private static function outputLogStyles(): void {
-        echo '<style>
-            .log-table { 
-                width: 100%; 
-                border-collapse: collapse; 
-                margin: 10px 0; 
-                background: #fff;
-            }
-            .log-table th, .log-table td { 
-                padding: 12px; 
-                text-align: left; 
-                border: 1px solid #e1e1e1; 
-            }
-            .log-table th { 
-                background: #f5f5f5; 
-                font-weight: bold; 
-            }
-            .log-status.success { 
-                color: #46b450; 
-                font-weight: bold; 
-            }
-            .log-status.error { 
-                color: #dc3232; 
-                font-weight: bold; 
-            }
-            .log-details pre {
-                margin: 5px 0;
-                padding: 10px;
-                background: #f8f9fa;
-                border: 1px solid #e2e4e7;
-                overflow-x: auto;
-            }
-            .log-time {
-                white-space: nowrap;
-            }
-        </style>';
+        
+        // Add JavaScript for toggling log details
+        self::outputLogScript();
     }
     
     /**
@@ -132,14 +93,24 @@ class Logs {
 
         foreach ($logs as $log) {
             $status_class = $log['success'] ? 'success' : 'error';
-            $status_text = $log['success'] ? '✓ Success' : '✗ Failed';
+            $status_icon = $log['success'] ? 'dashicons-yes-alt' : 'dashicons-warning';
+            $status_text = $log['success'] ? 'Success' : 'Failed';
             
             echo '<tr>';
             echo '<td class="log-time">' . date('Y-m-d H:i:s', $log['time']) . '</td>';
-            echo '<td class="log-status ' . $status_class . '">' . $status_text . '</td>';
+            echo '<td class="log-status ' . $status_class . '"><span class="dashicons ' . $status_icon . '"></span> ' . $status_text . '</td>';
             echo '<td>' . (isset($log['data']['category']) ? esc_html($log['data']['category']) : '-') . '</td>';
             echo '<td class="log-details">';
             
+            // Collapsible details
+            echo '<div class="log-summary">';
+            if (isset($log['data']['status'])) {
+                echo '<strong>' . esc_html($log['data']['status']) . '</strong>';
+            }
+            echo ' <button type="button" class="toggle-details button-link">Show details</button>';
+            echo '</div>';
+            
+            echo '<div class="log-full-details" style="display:none;">';
             if (isset($log['data']['status'])) {
                 echo '<div><strong>Status:</strong> ' . esc_html($log['data']['status']) . '</div>';
             }
@@ -150,10 +121,46 @@ class Logs {
                 echo '<div><strong>Error:</strong><pre>' . esc_html($log['data']['error']) . '</pre></div>';
             }
             
+            // Show all other data
+            foreach ($log['data'] as $key => $value) {
+                if (!in_array($key, ['status', 'prompt', 'error', 'timestamp', 'request_id', 'category'])) {
+                    if (is_scalar($value)) {
+                        echo '<div><strong>' . esc_html(ucfirst($key)) . ':</strong> ' . esc_html($value) . '</div>';
+                    } elseif (!empty($value)) {
+                        echo '<div><strong>' . esc_html(ucfirst($key)) . ':</strong><pre>' . esc_html(print_r($value, true)) . '</pre></div>';
+                    }
+                }
+            }
+            
+            echo '</div>'; // End log-full-details
+            
             echo '</td></tr>';
         }
         
         echo '</tbody></table>';
+    }
+    
+    /**
+     * Output JavaScript for log details toggling
+     */
+    private static function outputLogScript(): void {
+        ?>
+        <script>
+        jQuery(document).ready(function($) {
+            $('.toggle-details').on('click', function() {
+                var $details = $(this).closest('.log-summary').next('.log-full-details');
+                $details.toggle();
+                
+                // Update button text
+                if ($details.is(':visible')) {
+                    $(this).text('Hide details');
+                } else {
+                    $(this).text('Show details');
+                }
+            });
+        });
+        </script>
+        <?php
     }
     
     /**
