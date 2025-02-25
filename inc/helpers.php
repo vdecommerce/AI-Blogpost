@@ -1,57 +1,56 @@
-<?php
-if (!defined('ABSPATH')) {
-    exit; // Exit if accessed directly
-}
+<?php declare(strict_types=1);
 
-// Global cache variable
-global $ai_blogpost_option_cache;
-if (!isset($ai_blogpost_option_cache)) {
-    $ai_blogpost_option_cache = array();
-}
+namespace AI_Blogpost;
+
+// Prevent direct access
+defined('ABSPATH') or exit;
 
 /**
- * Get an option value from cache or database
- * 
- * @param string $option_name The option name
- * @param mixed $default Default value if option doesn't exist
- * @return mixed The option value
+ * Helper functions and utilities
  */
-function get_cached_option($option_name, $default = '') {
-    global $ai_blogpost_option_cache;
+class Helpers {
+    private static array $optionCache = [];
     
-    if (!isset($ai_blogpost_option_cache[$option_name])) {
-        $ai_blogpost_option_cache[$option_name] = get_option($option_name, $default);
+    /**
+     * Get an option value from cache or database
+     */
+    public static function getCachedOption(string $option_name, mixed $default = ''): mixed {
+        if (!isset(self::$optionCache[$option_name])) {
+            self::$optionCache[$option_name] = get_option($option_name, $default);
+        }
+        
+        return self::$optionCache[$option_name];
     }
     
-    return $ai_blogpost_option_cache[$option_name];
-}
-
-/**
- * Clear the options cache
- */
-function clear_ai_blogpost_cache() {
-    global $ai_blogpost_option_cache;
-    $ai_blogpost_option_cache = array();
-}
-
-/**
- * Clear cache after saving settings
- */
-function ai_blogpost_after_save_settings() {
-    if (isset($_POST['option_page']) && $_POST['option_page'] === 'ai_blogpost_settings') {
-        clear_ai_blogpost_cache();
+    /**
+     * Clear the options cache
+     */
+    public static function clearCache(): void {
+        self::$optionCache = [];
+    }
+    
+    /**
+     * Clear cache after saving settings
+     */
+    public static function afterSaveSettings(): void {
+        if (isset($_POST['option_page']) && $_POST['option_page'] === 'ai_blogpost_settings') {
+            self::clearCache();
+        }
+    }
+    
+    /**
+     * Initialize helper functionality
+     */
+    public static function initialize(): void {
+        add_action('admin_init', [self::class, 'afterSaveSettings'], 99);
     }
 }
-add_action('admin_init', 'ai_blogpost_after_save_settings', 99);
 
 /**
- * Get language-specific instruction for AI prompts
- * 
- * @param string $language_code The language code
- * @return string The instruction in the specified language
+ * Language handling functionality
  */
-function get_language_instruction($language_code) {
-    $instructions = [
+class LanguageHandler {
+    private const INSTRUCTIONS = [
         'en' => 'Write all content in English.',
         'nl' => 'Schrijf alle content in het Nederlands.',
         'de' => 'Schreiben Sie den gesamten Inhalt auf Deutsch.',
@@ -59,5 +58,20 @@ function get_language_instruction($language_code) {
         'es' => 'Escribe todo el contenido en español.'
     ];
     
-    return $instructions[$language_code] ?? $instructions['en'];
+    /**
+     * Get language-specific instruction for AI prompts
+     */
+    public static function getInstruction(string $language_code): string {
+        return self::INSTRUCTIONS[$language_code] ?? self::INSTRUCTIONS['en'];
+    }
+    
+    /**
+     * Get available languages
+     */
+    public static function getAvailableLanguages(): array {
+        return array_keys(self::INSTRUCTIONS);
+    }
 }
+
+// Initialize helper functionality
+Helpers::initialize();
