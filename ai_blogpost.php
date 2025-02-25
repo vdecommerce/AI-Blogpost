@@ -67,6 +67,9 @@ class Plugin {
             add_action('admin_menu', ['\AI_Blogpost\Settings', 'initializeMenu']);
             add_action('admin_enqueue_scripts', ['\AI_Blogpost\Settings', 'enqueueAssets']);
             
+            // Add AJAX handlers
+            add_action('wp_ajax_save_ai_blogpost_settings', ['\AI_Blogpost\Settings', 'handleAjaxSave']);
+            
             // Add fallback for dashboard issues
             add_action('admin_notices', [$this, 'checkDashboardFunctionality']);
         }

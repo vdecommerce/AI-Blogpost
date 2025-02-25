@@ -170,11 +170,28 @@ class Logs {
      * Clear API logs
      */
     public static function clearLogs(): void {
-        if (!isset($_POST['clear_ai_logs']) || !check_admin_referer('clear_ai_logs_nonce')) {
+        if (!isset($_POST['clear_ai_logs'])) {
+            return;
+        }
+        
+        // Check nonce without requiring exact match
+        $nonce_verified = false;
+        if (isset($_POST['_wpnonce'])) {
+            $nonce_verified = wp_verify_nonce($_POST['_wpnonce'], 'clear_ai_logs_nonce');
+        }
+        
+        if (!$nonce_verified) {
             return;
         }
         
         delete_option(self::API_LOGS_OPTION);
+        
+        // Add success message
+        add_action('admin_notices', function() {
+            echo '<div class="notice notice-success is-dismissible"><p>Logs cleared successfully.</p></div>';
+        });
+        
+        // Redirect back to the logs page
         wp_redirect(add_query_arg('logs_cleared', '1', wp_get_referer()));
         exit;
     }

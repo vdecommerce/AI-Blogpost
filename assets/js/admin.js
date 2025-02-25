@@ -31,26 +31,126 @@ jQuery(document).ready(function($) {
     function initTabs() {
         try {
             debug('Initializing tabs');
+            
+            // Save form data before switching tabs
+            function saveFormData(formId) {
+                const formData = {};
+                $('#' + formId + ' :input').each(function() {
+                    const input = $(this);
+                    const name = input.attr('name');
+                    if (name) {
+                        if (input.is(':checkbox')) {
+                            formData[name] = input.is(':checked');
+                        } else {
+                            formData[name] = input.val();
+                        }
+                    }
+                });
+                return formData;
+            }
+            
+            // Restore form data after switching tabs
+            function restoreFormData(formId, data) {
+                if (!data) return;
+                
+                $.each(data, function(name, value) {
+                    const input = $('#' + formId + ' :input[name="' + name + '"]');
+                    if (input.length) {
+                        if (input.is(':checkbox')) {
+                            input.prop('checked', value);
+                        } else {
+                            input.val(value);
+                        }
+                    }
+                });
+            }
+            
+            // Store form data for each tab
+            const formData = {
+                'tab-content': null,
+                'tab-text-generation': null,
+                'tab-image-generation': null
+            };
+            
+            // Function to save form data to server via AJAX
+            function saveFormToServer(formId) {
+                const $form = $('#' + formId + ' form');
+                if (!$form.length) return;
+                
+                const formData = new FormData($form[0]);
+                formData.append('action', 'save_ai_blogpost_settings');
+                formData.append('nonce', aiBlogpostAdmin.nonce);
+                formData.append('tab', formId);
+                
+                // Show saving indicator
+                if (!$('#' + formId + ' .save-indicator').length) {
+                    $form.append('<div class="save-indicator" style="margin-top: 10px; color: #999;">Saving...</div>');
+                } else {
+                    $('#' + formId + ' .save-indicator').text('Saving...').show();
+                }
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(response) {
+                        if (response.success) {
+                            $('#' + formId + ' .save-indicator').text('Settings saved').css('color', '#46b450');
+                            setTimeout(function() {
+                                $('#' + formId + ' .save-indicator').fadeOut();
+                            }, 2000);
+                        } else {
+                            $('#' + formId + ' .save-indicator').text('Error saving settings').css('color', '#dc3232');
+                        }
+                    },
+                    error: function() {
+                        $('#' + formId + ' .save-indicator').text('Error saving settings').css('color', '#dc3232');
+                    }
+                });
+            }
+            
             $('.ai-blogpost-tabs a').on('click', function(e) {
                 e.preventDefault();
+                
+                // Save form data from current tab
+                const currentTab = $('.ai-blogpost-tab-content.active').attr('id');
+                if (currentTab && $('#' + currentTab + ' form').length) {
+                    formData[currentTab] = saveFormData(currentTab);
+                    
+                    // Save to server
+                    saveFormToServer(currentTab);
+                }
                 
                 // Update active tab
                 $('.ai-blogpost-tabs a').removeClass('active');
                 $(this).addClass('active');
                 
                 // Show corresponding content
-                const tabId = $(this).attr('href');
+                const tabId = $(this).attr('href').replace('#', ''); // Remove the # from href
                 $('.ai-blogpost-tab-content').removeClass('active');
-                $(tabId).addClass('active');
+                $('#' + tabId).addClass('active');
+                
+                // Restore form data for new tab
+                if (formData[tabId]) {
+                    restoreFormData(tabId, formData[tabId]);
+                }
                 
                 // Save active tab to localStorage
                 localStorage.setItem('ai_blogpost_active_tab', tabId);
             });
             
+            // Add save button event handlers
+            $('.ai-blogpost-tab-content form').on('submit', function(e) {
+                const tabId = $(this).closest('.ai-blogpost-tab-content').attr('id');
+                formData[tabId] = saveFormData(tabId);
+            });
+            
             // Restore active tab from localStorage
             const savedTab = localStorage.getItem('ai_blogpost_active_tab');
-            if (savedTab && $(savedTab).length) {
-                $('.ai-blogpost-tabs a[href="' + savedTab + '"]').trigger('click');
+            if (savedTab && $('#' + savedTab).length) {
+                $('.ai-blogpost-tabs a[href="#' + savedTab + '"]').trigger('click');
             } else {
                 // Default to first tab
                 $('.ai-blogpost-tabs a:first').trigger('click');
