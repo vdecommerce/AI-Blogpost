@@ -56,8 +56,9 @@ class PostCreation {
     
     /**
      * Create a new AI-generated blog post
+     * @return int|false Post ID on success, false on failure
      */
-    public static function create(): int|false {
+    public static function create() {
         try {
             Logs::debug('Starting blog post creation');
             
@@ -141,7 +142,7 @@ class PostCreation {
         Logs::debug('Raw AI Content:', $ai_content);
 
         // Remove thinking process if present
-        if (str_contains($ai_content, '</think>')) {
+        if (strpos($ai_content, '</think>') !== false) {
             $ai_content = substr($ai_content, strpos($ai_content, '</think>') + 8);
         }
 

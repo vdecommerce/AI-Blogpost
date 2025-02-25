@@ -13,8 +13,11 @@ class Helpers {
     
     /**
      * Get an option value from cache or database
+     * @param string $option_name
+     * @param mixed $default
+     * @return mixed
      */
-    public static function getCachedOption(string $option_name, mixed $default = ''): mixed {
+    public static function getCachedOption(string $option_name, $default = '') {
         if (!isset(self::$optionCache[$option_name])) {
             self::$optionCache[$option_name] = get_option($option_name, $default);
         }

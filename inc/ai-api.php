@@ -174,12 +174,15 @@ class AiApi {
     public static function fetchDalleImage(array $image_data): ?int {
         $generation_type = Helpers::getCachedOption('ai_blogpost_image_generation_type', 'none');
         
-        return match($generation_type) {
-            'comfyui' => ComfyUiApi::fetchImage($image_data),
-            'dalle' => DalleApi::fetchImage($image_data),
-            'localai' => LocalAiApi::fetchImage($image_data),
-            default => null
-        };
+        if ($generation_type === 'comfyui') {
+            return ComfyUiApi::fetchImage($image_data);
+        } elseif ($generation_type === 'dalle') {
+            return DalleApi::fetchImage($image_data);
+        } elseif ($generation_type === 'localai') {
+            return LocalAiApi::fetchImage($image_data);
+        } else {
+            return null;
+        }
     }
 
     /**
@@ -212,9 +215,9 @@ class AiApi {
             $gpt_models = [];
             $dalle_models = [];
             foreach ($body['data'] as $model) {
-                if (str_contains($model['id'], 'gpt')) {
+                if (strpos($model['id'], 'gpt') !== false) {
                     $gpt_models[] = $model['id'];
-                } elseif (str_contains($model['id'], 'dall-e')) {
+                } elseif (strpos($model['id'], 'dall-e') !== false) {
                     $dalle_models[] = $model['id'];
                 }
             }
@@ -275,7 +278,7 @@ class LmStudioApi {
             }
 
             $content = $result['choices'][0]['text'];
-            if (str_contains($content, '</think>')) {
+            if (strpos($content, '</think>') !== false) {
                 $content = substr($content, strpos($content, '</think>') + 8);
             }
             $content = trim(str_replace(['### Assistant:', '---'], '', $content));

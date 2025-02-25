@@ -14,8 +14,11 @@ class Logs {
     
     /**
      * Log debug messages if WP_DEBUG is enabled
+     * @param string $message
+     * @param mixed $data
+     * @return void
      */
-    public static function debug(string $message, mixed $data = null): void {
+    public static function debug(string $message, $data = null): void {
         if (!defined('WP_DEBUG') || !WP_DEBUG) {
             return;
         }
