@@ -196,7 +196,7 @@ function send_lm_studio_request($messages) {
                 'model' => get_cached_option('ai_blogpost_lm_model', 'model.gguf'),
                 'prompt' => $prompt,
                 'temperature' => (float)get_cached_option('ai_blogpost_temperature', 0.7),
-                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096), // Consistentie met OpenAI
+                'max_tokens' => min((int)get_cached_option('ai_blogpost_max_tokens', 2048), 4096),
                 'stream' => false
             )),
             'headers' => array(
@@ -251,7 +251,7 @@ function fetch_dalle_image_from_text($image_data) {
     if ($generation_type === 'comfyui') {
         return fetch_comfyui_image_from_text($image_data);
     } elseif ($generation_type === 'dalle') {
-        return fetch_dalle_image($image_data); // Aanname: deze functie bestaat elders
+        return fetch_dalle_image($image_data);
     } elseif ($generation_type === 'localai') {
         return fetch_localai_image($image_data);
     }
@@ -295,7 +295,7 @@ function fetch_localai_image($image_data) {
         $payload = [
             'prompt' => $prompt,
             'n' => 1,
-            'size' => get_cached_option('ai_blogpost_localai_size', '1024x1024') // Configureerbaar maken
+            'size' => get_cached_option('ai_blogpost_localai_size', '1024x1024')
         ];
 
         $response = wp_remote_post($api_url . '/v1/images/generations', [

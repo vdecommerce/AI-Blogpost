@@ -93,7 +93,6 @@ function create_ai_blogpost() {
                 $template = get_cached_option('ai_blogpost_dalle_prompt_template', 
                     'Create a professional blog header image about [category]. Style: Modern and professional.');
             } elseif ($generation_type === 'comfyui') {
-                // For ComfyUI, we use the workflow's built-in prompt template
                 $template = '[category]';
             }
             
@@ -115,7 +114,6 @@ function create_ai_blogpost() {
                 }
             } catch (Exception $e) {
                 ai_blogpost_debug_log('Image generation error:', $e->getMessage());
-                // Don't fail the whole post creation if image fails
                 error_log('AI Blogpost Image Generation Error: ' . $e->getMessage());
             }
         }
@@ -136,53 +134,43 @@ function create_ai_blogpost() {
 function parse_ai_content($ai_content) {
     ai_blogpost_debug_log('Raw AI Content:', $ai_content);
 
-    // Remove thinking process if present
     if (strpos($ai_content, '</think>') !== false) {
         $ai_content = substr($ai_content, strpos($ai_content, '</think>') + 8);
     }
 
-    // Initialize variables
     $title = '';
     $content = '';
     $category = '';
 
-    // Extract title - improved pattern matching
     if (preg_match('/\|\|Title\|\|:\s*(?:"([^"]+)"|([^"\n]+))(?=\s*\|\||\s*<|\s*$)/s', $ai_content, $matches)) {
         $title = !empty($matches[1]) ? $matches[1] : $matches[2];
         $title = trim($title);
     } elseif (preg_match('/<h1[^>]*>(.*?)<\/h1>/s', $ai_content, $matches)) {
-        // Backup: try to get title from H1 if ||Title|| format fails
         $title = trim(strip_tags($matches[1]));
     }
 
-    // Extract content
     if (preg_match('/<article>(.*?)<\/article>/s', $ai_content, $matches)) {
         $content = trim($matches[1]);
     } elseif (preg_match('/\|\|Content\|\|:\s*(.+?)(?=\|\|Category\|\||\s*$)/s', $ai_content, $matches)) {
         $content = trim($matches[1]);
     }
 
-    // Extract category
     if (preg_match('/\|\|Category\|\|:\s*([^\n]+)/s', $ai_content, $matches)) {
         $category = trim($matches[1]);
     }
 
-    // Clean up the title
     $title = str_replace(['"', "'"], '', $title);
     $title = preg_replace('/\s+/', ' ', $title);
 
-    // Clean up the content
     $content = preg_replace('/\*\*(.*?)\*\*/', '<strong>$1</strong>', $content);
     $content = preg_replace('/\*(.*?)\*/', '<em>$1</em>', $content);
     $content = preg_replace('/#{3,}\s+(.+)/', '<h3>$1</h3>', $content);
     $content = preg_replace('/#{2}\s+(.+)/', '<h2>$1</h2>', $content);
     $content = preg_replace('/#{1}\s+(.+)/', '<h1>$1</h1>', $content);
     
-    // Convert markdown lists to HTML
     $content = preg_replace('/^\s*[-\*]\s+(.+)$/m', '<li>$1</li>', $content);
     $content = preg_replace('/(<li>.*?<\/li>)/s', '<ul>$1</ul>', $content);
 
-    // Add paragraph tags
     $content = wpautop($content);
 
     $parsed = array(
@@ -205,21 +193,17 @@ function create_test_ai_blogpost() {
         $already_running = true;
         
         try {
-            // Create post and handle both text and image generation
             $post_id = create_ai_blogpost();
             
             if ($post_id) {
-                // Add success notice to transient to avoid duplicate messages
                 set_transient('ai_blogpost_test_notice', 'success', 30);
             }
         } catch (Exception $e) {
-            // Log error and set error notice
             error_log('Test post creation failed: ' . $e->getMessage());
             set_transient('ai_blogpost_test_notice', 'error', 30);
         }
     }
     
-    // Display notice if set
     $notice_type = get_transient('ai_blogpost_test_notice');
     if ($notice_type) {
         delete_transient('ai_blogpost_test_notice');
@@ -231,6 +215,6 @@ function create_test_ai_blogpost() {
     }
 }
 
-// Remove any existing hooks and add our new one
 remove_action('admin_notices', 'create_test_ai_blogpost');
 add_action('admin_notices', 'create_test_ai_blogpost', 10, 0);
+
