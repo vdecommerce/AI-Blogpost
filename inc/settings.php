@@ -178,51 +178,43 @@ class Settings {
      */
     public static function enqueueAssets(): void {
         $screen = get_current_screen();
-        if ($screen && $screen->id === 'toplevel_page_' . self::MENU_SLUG) {
-            // Ensure dashicons are loaded
-            wp_enqueue_style('dashicons');
-            
-            // Enqueue our custom CSS with dashicons dependency
-            wp_enqueue_style(
-                'ai-blogpost-admin',
-                plugin_dir_url(dirname(__FILE__)) . 'assets/css/admin.css',
-                ['dashicons'],
-                AI_BLOGPOST_VERSION . '.' . time() // Add timestamp to prevent caching during development
-            );
-            
-            // Enqueue our custom JS
-            wp_enqueue_script(
-                'ai-blogpost-admin',
-                plugin_dir_url(dirname(__FILE__)) . 'assets/js/admin.js',
-                ['jquery'],
-                AI_BLOGPOST_VERSION . '.' . time(), // Add timestamp to prevent caching during development
-                true
-            );
-            
-            // Pass data to JavaScript
+        if ($screen && $screen->id === 'toplevel_page_ai_blogpost') {
+            // Definieer paden naar assets
+            $css_path = AI_BLOGPOST_PLUGIN_DIR . 'assets/css/admin.css';
+            $js_path = AI_BLOGPOST_PLUGIN_DIR . 'assets/js/admin.js';
+    
+            // Laad CSS als het bestand bestaat
+            if (file_exists($css_path)) {
+                wp_enqueue_style(
+                    'ai-blogpost-admin',
+                    AI_BLOGPOST_PLUGIN_URL . 'assets/css/admin.css',
+                    ['dashicons'],
+                    AI_BLOGPOST_VERSION
+                );
+            } else {
+                error_log('AI Blogpost: CSS-bestand niet gevonden op ' . $css_path);
+            }
+    
+            // Laad JS als het bestand bestaat
+            if (file_exists($js_path)) {
+                wp_enqueue_script(
+                    'ai-blogpost-admin',
+                    AI_BLOGPOST_PLUGIN_URL . 'assets/js/admin.js',
+                    ['jquery'],
+                    AI_BLOGPOST_VERSION,
+                    true
+                );
+            } else {
+                error_log('AI Blogpost: JS-bestand niet gevonden op ' . $js_path);
+            }
+    
+            // Geef gegevens door aan JavaScript
             wp_localize_script('ai-blogpost-admin', 'aiBlogpostAdmin', [
                 'ajaxurl' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('ai_blogpost_nonce'),
                 'debug' => defined('WP_DEBUG') && WP_DEBUG,
                 'version' => AI_BLOGPOST_VERSION
             ]);
-            
-            // Add inline script to detect JS errors
-            wp_add_inline_script('ai-blogpost-admin', '
-                console.log("AI Blogpost Admin JS loaded, version: ' . AI_BLOGPOST_VERSION . '");
-                window.addEventListener("error", function(e) {
-                    console.error("AI Blogpost JS Error:", e.message, "at", e.filename, ":", e.lineno);
-                    if (document.querySelector(".ai-blogpost-dashboard")) {
-                        if (!document.getElementById("ai-blogpost-js-error")) {
-                            var errorDiv = document.createElement("div");
-                            errorDiv.id = "ai-blogpost-js-error";
-                            errorDiv.className = "notice notice-error";
-                            errorDiv.innerHTML = "<p><strong>JavaScript Error:</strong> " + e.message + "</p>";
-                            document.querySelector(".ai-blogpost-dashboard").prepend(errorDiv);
-                        }
-                    }
-                });
-            ');
         }
     }
 }
