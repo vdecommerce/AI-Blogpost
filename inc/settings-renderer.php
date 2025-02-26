@@ -6,9 +6,294 @@ namespace AI_Blogpost;
 defined('ABSPATH') or exit;
 
 /**
- * Additional methods for the SettingsRenderer class
+ * Settings page renderer
  */
 class SettingsRenderer {
+    /**
+     * Render the admin settings page
+     */
+    public static function renderAdminPage(): void {
+        echo '<div class="wrap ai-blogpost-dashboard">';
+        echo '<h1>AI Blogpost Dashboard</h1>';
+        
+        // Render tabs navigation
+        self::renderTabsNavigation();
+        
+        // Start dashboard content
+        echo '<div class="dashboard-content">';
+        
+        // Render tab content
+        self::renderDashboardTab();
+        self::renderContentTab();
+        self::renderTextGenerationTab();
+        self::renderImageGenerationTab();
+        self::renderLogsTab();
+        
+        echo '</div>'; // End dashboard-content
+        
+        echo '</div>'; // End wrap
+    }
+
+    /**
+     * Render tabs navigation
+     */
+    private static function renderTabsNavigation(): void {
+        echo '<ul class="ai-blogpost-tabs">';
+        echo '<li><a href="#tab-dashboard" class="active"><span class="dashicons dashicons-dashboard"></span> Dashboard</a></li>';
+        echo '<li><a href="#tab-content"><span class="dashicons dashicons-admin-post"></span> Content Settings</a></li>';
+        echo '<li><a href="#tab-text-generation"><span class="dashicons dashicons-editor-paste-text"></span> Text Generation</a></li>';
+        echo '<li><a href="#tab-image-generation"><span class="dashicons dashicons-format-image"></span> Image Generation</a></li>';
+        echo '<li><a href="#tab-logs"><span class="dashicons dashicons-list-view"></span> Logs & Status</a></li>';
+        echo '</ul>';
+    }
+
+    /**
+     * Render dashboard tab content
+     */
+    private static function renderDashboardTab(): void {
+        echo '<div id="tab-dashboard" class="ai-blogpost-tab-content active">';
+        
+        // Dashboard widgets
+        echo '<div class="dashboard-widgets">';
+        
+        // Quick actions widget
+        echo '<div class="dashboard-widget">';
+        echo '<div class="dashboard-widget-header">';
+        echo '<h3 class="dashboard-widget-title"><span class="dashicons dashicons-admin-tools"></span> Quick Actions</h3>';
+        echo '</div>';
+        echo '<div class="dashboard-widget-content">';
+        echo '<form method="post" style="margin-bottom: 10px;">';
+        echo '<input type="submit" name="test_ai_blogpost" class="button button-primary" value="Generate Test Post">';
+        echo '</form>';
+        
+        $next_post_time = wp_next_scheduled('ai_blogpost_cron_hook');
+        if ($next_post_time) {
+            echo '<div class="next-post-info">';
+            echo '<span class="dashicons dashicons-calendar-alt"></span> ';
+            echo 'Next scheduled post: ' . get_date_from_gmt(
+                date('Y-m-d H:i:s', $next_post_time),
+                'F j, Y @ H:i'
+            );
+            echo '</div>';
+        }
+        echo '</div>'; // End widget content
+        echo '</div>'; // End widget
+        
+        // Stats widget
+        echo '<div class="dashboard-widget">';
+        echo '<div class="dashboard-widget-header">';
+        echo '<h3 class="dashboard-widget-title"><span class="dashicons dashicons-chart-bar"></span> Statistics</h3>';
+        echo '</div>';
+        echo '<div class="dashboard-widget-content">';
+        
+        // Get post count
+        $post_count = wp_count_posts();
+        $published_posts = $post_count->publish ?? 0;
+        
+        echo '<p><strong>Published Posts:</strong> ' . $published_posts . '</p>';
+        
+        // Get logs count
+        $logs = get_option('ai_blogpost_api_logs', []);
+        $text_logs = array_filter($logs, function($log) {
+            return isset($log['type']) && $log['type'] === 'Text Generation';
+        });
+        $image_logs = array_filter($logs, function($log) {
+            return isset($log['type']) && $log['type'] === 'Image Generation';
+        });
+        
+        echo '<p><strong>Text Generation Logs:</strong> ' . count($text_logs) . '</p>';
+        echo '<p><strong>Image Generation Logs:</strong> ' . count($image_logs) . '</p>';
+        
+        echo '</div>'; // End widget content
+        echo '</div>'; // End widget
+        
+        // Settings status widget
+        echo '<div class="dashboard-widget">';
+        echo '<div class="dashboard-widget-header">';
+        echo '<h3 class="dashboard-widget-title"><span class="dashicons dashicons-admin-settings"></span> Settings Status</h3>';
+        echo '</div>';
+        echo '<div class="dashboard-widget-content">';
+        
+        // Check API key
+        $api_key = Helpers::getCachedOption('ai_blogpost_api_key', '');
+        $api_key_status = !empty($api_key) ? 
+            '<span style="color: #46b450;">✓ Configured</span>' : 
+            '<span style="color: #dc3232;">✗ Not configured</span>';
+        echo '<p><strong>OpenAI API Key:</strong> ' . $api_key_status . '</p>';
+        
+        // Check language
+        $language = Helpers::getCachedOption('ai_blogpost_language', 'en');
+        $languages = [
+            'en' => 'English',
+            'nl' => 'Nederlands',
+            'de' => 'Deutsch',
+            'fr' => 'Français',
+            'es' => 'Español'
+        ];
+        echo '<p><strong>Content Language:</strong> ' . ($languages[$language] ?? 'Unknown') . '</p>';
+        
+        // Check frequency
+        $frequency = Helpers::getCachedOption('ai_blogpost_post_frequency', 'daily');
+        echo '<p><strong>Post Frequency:</strong> ' . ucfirst($frequency) . '</p>';
+        
+        // Check image generation
+        $image_type = Helpers::getCachedOption('ai_blogpost_image_generation_type', 'none');
+        $image_type_label = [
+            'none' => 'Disabled',
+            'dalle' => 'DALL·E',
+            'comfyui' => 'ComfyUI',
+            'localai' => 'LocalAI'
+        ];
+        echo '<p><strong>Image Generation:</strong> ' . ($image_type_label[$image_type] ?? 'Unknown') . '</p>';
+        
+        echo '</div>'; // End widget content
+        echo '</div>'; // End widget
+        
+        echo '</div>'; // End dashboard-widgets
+        
+        echo '</div>'; // End tab-dashboard
+    }
+
+    /**
+     * Render content settings tab
+     */
+    private static function renderContentTab(): void {
+        echo '<div id="tab-content" class="ai-blogpost-tab-content">';
+        
+        echo '<form method="post" action="options.php">';
+        settings_fields('ai_blogpost_settings');
+        
+        echo '<div class="settings-section">';
+        echo '<h2><span class="dashicons dashicons-translation"></span> Language Settings</h2>';
+        echo '<table class="form-table">';
+        self::renderLanguageField();
+        echo '</table>';
+        echo '</div>';
+        
+        echo '<div class="settings-section">';
+        echo '<h2><span class="dashicons dashicons-calendar-alt"></span> Schedule Settings</h2>';
+        echo '<table class="form-table">';
+        self::renderFrequencyField();
+        echo '</table>';
+        echo '</div>';
+        
+        echo '<div class="settings-section">';
+        echo '<h2><span class="dashicons dashicons-category"></span> Category Settings</h2>';
+        echo '<table class="form-table">';
+        self::renderCategoriesField();
+        echo '</table>';
+        echo '</div>';
+        
+        submit_button('Save Content Settings');
+        echo '</form>';
+        
+        echo '</div>'; // End tab-content
+    }
+
+    /**
+     * Render text generation tab
+     */
+    private static function renderTextGenerationTab(): void {
+        echo '<div id="tab-text-generation" class="ai-blogpost-tab-content">';
+        
+        echo '<form method="post" action="options.php">';
+        settings_fields('ai_blogpost_settings');
+        
+        echo '<div class="settings-section">';
+        echo '<h2><span class="dashicons dashicons-admin-network"></span> OpenAI API Settings</h2>';
+        echo '<table class="form-table">';
+        self::renderApiKeyField();
+        self::renderModelField();
+        echo '</table>';
+        echo '</div>';
+        
+        echo '<div class="settings-section">';
+        echo '<h2><span class="dashicons dashicons-admin-generic"></span> Generation Parameters</h2>';
+        echo '<table class="form-table">';
+        self::renderTemperatureField();
+        self::renderMaxTokensField();
+        self::renderSystemRoleField();
+        self::renderContentTemplateField();
+        echo '</table>';
+        echo '</div>';
+        
+        echo '<div class="settings-section">';
+        echo '<h2><span class="dashicons dashicons-update"></span> Model Management</h2>';
+        echo '<table class="form-table">';
+        ModelManager::renderRefreshButton();
+        echo '</table>';
+        echo '</div>';
+        
+        echo '<div class="settings-section">';
+        echo '<h2><span class="dashicons dashicons-desktop"></span> LM Studio Integration</h2>';
+        echo '<p class="description">Use a local LM Studio instance instead of OpenAI API</p>';
+        echo '<table class="form-table">';
+        self::renderLmStudioSection();
+        echo '</table>';
+        echo '</div>';
+        
+        submit_button('Save Text Generation Settings');
+        echo '</form>';
+        
+        echo '</div>'; // End tab-text-generation
+    }
+
+    /**
+     * Render image generation tab
+     */
+    private static function renderImageGenerationTab(): void {
+        echo '<div id="tab-image-generation" class="ai-blogpost-tab-content">';
+        
+        echo '<form method="post" action="options.php">';
+        settings_fields('ai_blogpost_settings');
+        
+        echo '<div class="settings-section">';
+        echo '<h2><span class="dashicons dashicons-format-image"></span> Featured Image Generation</h2>';
+        
+        self::renderImageTypeSelector();
+        self::renderDalleSettings();
+        self::renderComfyUiSettings();
+        
+        echo '</div>';
+        
+        submit_button('Save Image Generation Settings');
+        echo '</form>';
+        
+        echo '</div>'; // End tab-image-generation
+    }
+
+    /**
+     * Render logs tab
+     */
+    private static function renderLogsTab(): void {
+        echo '<div id="tab-logs" class="ai-blogpost-tab-content">';
+        
+        echo '<div class="status-panel">';
+        echo '<div class="status-header">';
+        echo '<h2><span class="dashicons dashicons-media-text"></span> Text Generation Logs</h2>';
+        echo '<div class="status-actions">';
+        echo '<form method="post" style="display: inline;">';
+        wp_nonce_field('clear_ai_logs_nonce', '_wpnonce');
+        echo '<input type="submit" name="clear_ai_logs" class="button" value="Clear Logs">';
+        echo '</form>';
+        echo '<button type="button" class="button" onclick="window.location.reload();">Refresh Logs</button>';
+        echo '</div>';
+        echo '</div>';
+        
+        Logs::displayApiLogs('Text Generation');
+        echo '</div>';
+        
+        echo '<div class="status-panel">';
+        echo '<div class="status-header">';
+        echo '<h2><span class="dashicons dashicons-format-image"></span> Image Generation Logs</h2>';
+        echo '</div>';
+        
+        Logs::displayApiLogs('Image Generation');
+        echo '</div>';
+        
+        echo '</div>'; // End tab-logs
+    }
+
     /**
      * Render language field
      */
