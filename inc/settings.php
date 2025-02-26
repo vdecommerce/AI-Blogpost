@@ -44,6 +44,26 @@ function ai_blogpost_initialize_settings() {
     register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_api_url');
     register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_workflows');
     register_setting('ai_blogpost_settings', 'ai_blogpost_comfyui_default_workflow');
+    add_action('admin_init', function() {
+        if (isset($_POST['ai_blogpost_custom_categories'])) {
+            $input_categories = sanitize_textarea_field($_POST['ai_blogpost_custom_categories']);
+            error_log('Ingevoerde categorieën: ' . print_r($input_categories, true));
+        }
+    });
+    add_action('updated_option', function($option) {
+        if ($option === 'ai_blogpost_custom_categories') {
+            $categories = get_option('ai_blogpost_custom_categories');
+            error_log('Opgeslagen categorieën na update: ' . print_r($categories, true));
+        }
+    });
+    add_action('updated_option', function($option) {
+        if (strpos($option, 'ai_blogpost_') === 0) {
+            clear_ai_blogpost_cache(); // Zorg ervoor dat deze functie bestaat
+        }
+    });
+    if (isset($_POST['test_ai_blogpost']) && !isset($_POST['option_page'])) {
+        echo '<div class="notice notice-warning is-dismissible"><p>Sla eerst de instellingen op voordat je een testbericht genereert.</p></div>';
+    }
 }
 add_action('admin_init', 'ai_blogpost_initialize_settings');
 
