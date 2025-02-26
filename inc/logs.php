@@ -47,87 +47,218 @@ function display_api_logs($type) {
     });
     
     if (empty($filtered_logs)) {
-        echo '<div class="notice notice-warning"><p>No ' . esc_html($type) . ' logs found.</p></div>';
+        echo '<div class="ai-empty-logs">
+            <span class="dashicons dashicons-info"></span>
+            <p>No ' . esc_html($type) . ' logs found.</p>
+        </div>';
         return;
     }
 
     // Show most recent logs first
     $filtered_logs = array_reverse(array_slice($filtered_logs, -5));
 
-    // Add table styles
-    echo '<style>
-        .log-table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin: 10px 0; 
-            background: #fff;
-        }
-        .log-table th, .log-table td { 
-            padding: 12px; 
-            text-align: left; 
-            border: 1px solid #e1e1e1; 
-        }
-        .log-table th { 
-            background: #f5f5f5; 
-            font-weight: bold; 
-        }
-        .log-status.success { 
-            color: #46b450; 
-            font-weight: bold; 
-        }
-        .log-status.error { 
-            color: #dc3232; 
-            font-weight: bold; 
-        }
-        .log-details pre {
-            margin: 5px 0;
-            padding: 10px;
-            background: #f8f9fa;
-            border: 1px solid #e2e4e7;
-            overflow-x: auto;
-        }
-        .log-time {
-            white-space: nowrap;
-        }
-    </style>';
-
-    echo '<table class="log-table">';
-    echo '<thead>';
-    echo '<tr>';
-    echo '<th>Time</th>';
-    echo '<th>Status</th>';
-    echo '<th>Category</th>';
-    echo '<th>Details</th>';
-    echo '</tr>';
-    echo '</thead>';
-    echo '<tbody>';
-
+    echo '<div class="ai-logs-wrapper">';
+    
     foreach ($filtered_logs as $log) {
         $status_class = $log['success'] ? 'success' : 'error';
-        $status_text = $log['success'] ? '✓ Success' : '✗ Failed';
+        $status_icon = $log['success'] ? 'yes' : 'no-alt';
+        $category = isset($log['data']['category']) ? esc_html($log['data']['category']) : '-';
         
-        echo '<tr>';
-        echo '<td class="log-time">' . date('Y-m-d H:i:s', $log['time']) . '</td>';
-        echo '<td class="log-status ' . $status_class . '">' . $status_text . '</td>';
-        echo '<td>' . (isset($log['data']['category']) ? esc_html($log['data']['category']) : '-') . '</td>';
-        echo '<td class="log-details">';
+        echo '<div class="ai-log-entry ai-log-' . $status_class . '">';
+        
+        // Log header
+        echo '<div class="ai-log-header">';
+        echo '<div class="ai-log-status"><span class="dashicons dashicons-' . $status_icon . '"></span></div>';
+        echo '<div class="ai-log-meta">';
+        echo '<div class="ai-log-time">' . date('Y-m-d H:i:s', $log['time']) . '</div>';
+        echo '<div class="ai-log-category">' . $category . '</div>';
+        echo '</div>';
+        echo '<div class="ai-log-toggle"><span class="dashicons dashicons-arrow-down-alt2"></span></div>';
+        echo '</div>';
+        
+        // Log content
+        echo '<div class="ai-log-content">';
         
         if (isset($log['data']['status'])) {
-            echo '<div><strong>Status:</strong> ' . esc_html($log['data']['status']) . '</div>';
-        }
-        if (isset($log['data']['prompt'])) {
-            echo '<div><strong>Prompt:</strong><pre>' . esc_html($log['data']['prompt']) . '</pre></div>';
-        }
-        if (isset($log['data']['error'])) {
-            echo '<div><strong>Error:</strong><pre>' . esc_html($log['data']['error']) . '</pre></div>';
+            echo '<div class="ai-log-item"><strong>Status:</strong> ' . esc_html($log['data']['status']) . '</div>';
         }
         
-        echo '</td>';
-        echo '</tr>';
+        if (isset($log['data']['prompt']) && !empty($log['data']['prompt'])) {
+            $prompt = $log['data']['prompt'];
+            // If prompt is an array, convert to JSON string
+            if (is_array($prompt)) {
+                $prompt = json_encode($prompt, JSON_PRETTY_PRINT);
+            }
+            echo '<div class="ai-log-item"><strong>Prompt:</strong>';
+            echo '<div class="ai-log-code">' . esc_html($prompt) . '</div>';
+            echo '</div>';
+        }
+        
+        if (isset($log['data']['error'])) {
+            echo '<div class="ai-log-item"><strong>Error:</strong>';
+            echo '<div class="ai-log-code ai-log-error">' . esc_html($log['data']['error']) . '</div>';
+            echo '</div>';
+        }
+        
+        if (isset($log['data']['image_id']) && !empty($log['data']['image_id'])) {
+            $image_url = wp_get_attachment_image_url($log['data']['image_id'], 'thumbnail');
+            if ($image_url) {
+                echo '<div class="ai-log-item"><strong>Generated Image:</strong>';
+                echo '<div class="ai-log-image"><img src="' . esc_url($image_url) . '" alt="Generated image"></div>';
+                echo '</div>';
+            }
+        }
+        
+        echo '</div>'; // End log content
+        echo '</div>'; // End log entry
     }
     
-    echo '</tbody>';
-    echo '</table>';
+    echo '</div>'; // End logs wrapper
+    
+    // Add JavaScript for toggling log details
+    ?>
+    <script>
+    jQuery(document).ready(function($) {
+        $('.ai-log-header').click(function() {
+            var $entry = $(this).closest('.ai-log-entry');
+            var $content = $entry.find('.ai-log-content');
+            var $toggle = $(this).find('.ai-log-toggle .dashicons');
+            
+            $content.slideToggle(200);
+            $toggle.toggleClass('dashicons-arrow-down-alt2 dashicons-arrow-up-alt2');
+        });
+        
+        // Expand the first log entry by default
+        $('.ai-log-entry:first-child .ai-log-header').click();
+    });
+    </script>
+    <style>
+    .ai-empty-logs {
+        padding: 20px;
+        background: #f8f9fa;
+        border: 1px solid #e2e4e7;
+        border-radius: 4px;
+        text-align: center;
+        color: #646970;
+    }
+    
+    .ai-empty-logs .dashicons {
+        font-size: 24px;
+        width: 24px;
+        height: 24px;
+        margin-bottom: 10px;
+    }
+    
+    .ai-logs-wrapper {
+        border: 1px solid #e2e4e7;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    
+    .ai-log-entry {
+        border-bottom: 1px solid #e2e4e7;
+    }
+    
+    .ai-log-entry:last-child {
+        border-bottom: none;
+    }
+    
+    .ai-log-header {
+        display: flex;
+        align-items: center;
+        padding: 12px 15px;
+        background: #f8f9fa;
+        cursor: pointer;
+        transition: background 0.2s ease;
+    }
+    
+    .ai-log-header:hover {
+        background: #f0f0f1;
+    }
+    
+    .ai-log-status {
+        margin-right: 15px;
+    }
+    
+    .ai-log-status .dashicons {
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
+    }
+    
+    .ai-log-success .ai-log-status .dashicons {
+        color: #00a32a;
+    }
+    
+    .ai-log-error .ai-log-status .dashicons {
+        color: #d63638;
+    }
+    
+    .ai-log-meta {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .ai-log-time {
+        font-size: 13px;
+        color: #646970;
+    }
+    
+    .ai-log-category {
+        font-weight: 500;
+    }
+    
+    .ai-log-toggle {
+        margin-left: auto;
+    }
+    
+    .ai-log-content {
+        display: none;
+        padding: 15px;
+        background: white;
+        border-top: 1px solid #e2e4e7;
+    }
+    
+    .ai-log-item {
+        margin-bottom: 15px;
+    }
+    
+    .ai-log-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .ai-log-code {
+        margin-top: 5px;
+        padding: 10px;
+        background: #f8f9fa;
+        border: 1px solid #e2e4e7;
+        border-radius: 4px;
+        font-family: monospace;
+        white-space: pre-wrap;
+        overflow-x: auto;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .ai-log-error {
+        background: #fde8e8;
+        border-color: #d63638;
+    }
+    
+    .ai-log-image {
+        margin-top: 10px;
+    }
+    
+    .ai-log-image img {
+        max-width: 150px;
+        height: auto;
+        border: 1px solid #e2e4e7;
+        border-radius: 4px;
+    }
+    </style>
+    <?php
 }
 
 /**
