@@ -596,10 +596,12 @@ function display_image_settings() {
             
             reader.onload = function(e) {
                 try {
-                    // Validate JSON format
+                    // Basic JSON validation
                     var workflow = JSON.parse(e.target.result);
-                    if (!workflow.name || !workflow.description || !workflow.workflow) {
-                        throw new Error('Invalid workflow format. Must include name, description, and workflow.');
+                    
+                    // Check if it's a valid ComfyUI workflow (should have at least one node)
+                    if (!workflow || typeof workflow !== 'object' || Object.keys(workflow).length === 0) {
+                        throw new Error('Invalid ComfyUI workflow structure. The file should contain at least one node.');
                     }
 
                     // Create form data
