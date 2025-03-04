@@ -1029,10 +1029,29 @@ function handle_workflow_upload() {
     check_ajax_referer('ai_blogpost_nonce', 'nonce');
     
     try {
-        // Get and validate workflow data
-        $workflow_data = json_decode(stripslashes($_POST['workflow']), true);
-        if (!$workflow_data || !isset($workflow_data['name']) || !isset($workflow_data['description']) || !isset($workflow_data['workflow'])) {
-            throw new Exception('Invalid workflow format');
+        // Get uploaded workflow data
+        $uploaded_data = json_decode(stripslashes($_POST['workflow']), true);
+        if (!$uploaded_data) {
+            throw new Exception('Invalid JSON format');
+        }
+
+        // Check if the workflow is already in the correct format or needs wrapping
+        $workflow_data = [];
+        if (isset($uploaded_data['name']) && isset($uploaded_data['description']) && isset($uploaded_data['workflow'])) {
+            // Already in correct format
+            $workflow_data = $uploaded_data;
+        } else {
+            // This is a raw workflow - wrap it in the correct structure
+            $workflow_data = [
+                'name' => 'Workflow_' . time(),
+                'description' => 'Imported ComfyUI workflow',
+                'workflow' => $uploaded_data
+            ];
+        }
+
+        // Validate the workflow structure
+        if (!is_array($workflow_data['workflow'])) {
+            throw new Exception('Invalid workflow structure');
         }
 
         // Load existing config
