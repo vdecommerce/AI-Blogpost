@@ -495,14 +495,45 @@ function display_image_settings() {
     $workflows = isset($workflows_data['workflows']) ? $workflows_data['workflows'] : [];
     
     foreach ($workflows as $workflow) {
-        echo '<div class="workflow-item" style="display: flex; justify-content: space-between; align-items: center; padding: 8px; margin-bottom: 8px; background: #fff; border: 1px solid #e2e4e7; border-radius: 3px;">';
+        echo '<div class="workflow-item" style="margin-bottom: 15px; padding: 15px; background: #fff; border: 1px solid #e2e4e7; border-radius: 3px;">';
+        
+        // Workflow header
+        echo '<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">';
         echo '<div class="workflow-info">';
-        echo '<strong>' . esc_html($workflow['name']) . '</strong><br>';
-        echo '<span class="description">' . esc_html($workflow['description']) . '</span>';
+        echo '<h4 style="margin: 0;">' . esc_html($workflow['name']) . '</h4>';
+        echo '<p class="description" style="margin: 5px 0 0;">' . esc_html($workflow['description']) . '</p>';
         echo '</div>';
         echo '<div class="workflow-actions">';
-        echo '<button type="button" class="button view-workflow" data-workflow="' . esc_attr($workflow['name']) . '">View</button> ';
+        echo '<button type="button" class="button view-workflow" data-workflow="' . esc_attr($workflow['name']) . '">View JSON</button> ';
         echo '<button type="button" class="button button-link-delete delete-workflow" data-workflow="' . esc_attr($workflow['name']) . '">Delete</button>';
+        echo '</div>';
+        echo '</div>';
+
+        // Prompt settings
+        echo '<div class="workflow-prompts" style="background: #f8f9fa; padding: 15px; border: 1px solid #e2e4e7; border-radius: 3px;">';
+        echo '<h4 style="margin-top: 0;">Prompt Templates</h4>';
+
+        // Positive prompt
+        echo '<div class="prompt-field" style="margin-bottom: 10px;">';
+        echo '<label style="display: block; margin-bottom: 5px;">Positive Prompt Template:</label>';
+        echo '<textarea class="large-text code positive-prompt" data-workflow="' . esc_attr($workflow['name']) . '" rows="2" style="margin-bottom: 5px;">' . 
+             esc_textarea(isset($workflow['prompts']['positive']) ? $workflow['prompts']['positive'] : 'beautiful scenery [category], artistic style') . '</textarea>';
+        echo '</div>';
+
+        // Negative prompt
+        echo '<div class="prompt-field">';
+        echo '<label style="display: block; margin-bottom: 5px;">Negative Prompt Template:</label>';
+        echo '<textarea class="large-text code negative-prompt" data-workflow="' . esc_attr($workflow['name']) . '" rows="2" style="margin-bottom: 5px;">' . 
+             esc_textarea(isset($workflow['prompts']['negative']) ? $workflow['prompts']['negative'] : 'text, watermark, blur') . '</textarea>';
+        echo '</div>';
+
+        // Save prompts button
+        echo '<div style="margin-top: 10px;">';
+        echo '<button type="button" class="button save-prompts" data-workflow="' . esc_attr($workflow['name']) . '">Save Prompts</button>';
+        echo '<span class="spinner" style="float: none; margin-left: 4px;"></span>';
+        echo '</div>';
+
+        echo '</div>'; // Close workflow-prompts
         echo '</div>';
         echo '</div>';
     }
@@ -745,6 +776,61 @@ function display_image_settings() {
 
 
         // Enhanced connection test handling
+        // Save workflow prompts
+        $('.save-prompts').click(function() {
+            var $button = $(this);
+            var $spinner = $button.next('.spinner');
+            var workflow = $(this).data('workflow');
+            var $container = $(this).closest('.workflow-prompts');
+            
+            var positivePrompt = $container.find('.positive-prompt').val();
+            var negativePrompt = $container.find('.negative-prompt').val();
+            
+            $button.prop('disabled', true);
+            $spinner.addClass('is-active');
+            
+            $.post(ajaxurl, {
+                action: 'save_workflow_prompts',
+                nonce: '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>',
+                workflow: workflow,
+                prompts: {
+                    positive: positivePrompt,
+                    negative: negativePrompt
+                }
+            }, function(response) {
+                if (response.success) {
+                    $notification = createNotification('✅ Prompts saved successfully!', '#e7f5ea');
+                } else {
+                    $notification = createNotification('❌ ' + response.data, '#fde8e8');
+                }
+                $notification.fadeIn().delay(3000).fadeOut(function() { $(this).remove(); });
+            }).fail(function() {
+                var $notification = createNotification('❌ Failed to save prompts', '#fde8e8');
+                $notification.fadeIn().delay(3000).fadeOut(function() { $(this).remove(); });
+            }).always(function() {
+                $button.prop('disabled', false);
+                $spinner.removeClass('is-active');
+            });
+        });
+
+        // Helper function to create notifications
+        function createNotification(message, bgColor) {
+            return $('<div>')
+                .css({
+                    'position': 'fixed',
+                    'top': '20px',
+                    'right': '20px',
+                    'padding': '10px 20px',
+                    'border-radius': '4px',
+                    'background': bgColor,
+                    'box-shadow': '0 2px 5px rgba(0,0,0,0.2)',
+                    'z-index': 9999,
+                    'display': 'none'
+                })
+                .html(message)
+                .appendTo('body');
+        }
+
         $('.test-comfyui-connection').click(function() {
             var $button = $(this);
             var $spinner = $button.next('.spinner');
@@ -1181,3 +1267,80 @@ function handle_delete_workflow() {
     }
 }
 add_action('wp_ajax_delete_comfyui_workflow', 'handle_delete_workflow');
+
+/**
+ * Handle saving workflow prompts
+ */
+function handle_save_workflow_prompts() {
+    check_ajax_referer('ai_blogpost_nonce', 'nonce');
+    
+    try {
+        if (!isset($_POST['workflow']) || !isset($_POST['prompts']) || 
+            !isset($_POST['prompts']['positive']) || !isset($_POST['prompts']['negative'])) {
+            throw new Exception('Missing required prompt data');
+        }
+
+        $workflow_name = sanitize_text_field($_POST['workflow']);
+        $prompts = [
+            'positive' => sanitize_text_field($_POST['prompts']['positive']),
+            'negative' => sanitize_text_field($_POST['prompts']['negative'])
+        ];
+
+        ai_blogpost_debug_log('Saving workflow prompts:', [
+            'workflow' => $workflow_name,
+            'prompts' => $prompts
+        ]);
+        
+        // Load config file
+        $config_file = plugin_dir_path(__FILE__) . '../workflows/config.json';
+        $config_data = json_decode(file_get_contents($config_file), true);
+        if (!$config_data) {
+            throw new Exception('Failed to load workflow configuration');
+        }
+        
+        // Find workflow and update prompts
+        foreach ($config_data['workflows'] as &$workflow) {
+            if ($workflow['name'] === $workflow_name) {
+                $workflow['prompts'] = [
+                    'positive' => sanitize_text_field($prompts['positive']),
+                    'negative' => sanitize_text_field($prompts['negative'])
+                ];
+                
+                // Also update the workflow nodes with new prompts
+                $workflow_file = plugin_dir_path(__FILE__) . '../workflows/' . sanitize_file_name($workflow_name) . '.json';
+                $workflow_data = json_decode(file_get_contents($workflow_file), true);
+                
+                if ($workflow_data) {
+                    // Find and update nodes with CLIPTextEncode class_type
+                    foreach ($workflow_data as &$node) {
+                        if (isset($node['class_type']) && $node['class_type'] === 'CLIPTextEncode') {
+                            // Identify positive/negative prompt nodes by name or connection
+                            if (isset($node['_meta']['title']) && strpos(strtolower($node['_meta']['title']), 'negative') !== false) {
+                                $node['inputs']['text'] = $prompts['negative'];
+                            } else {
+                                $node['inputs']['text'] = $prompts['positive'];
+                            }
+                        }
+                    }
+                    
+                    // Save updated workflow file
+                    if (!file_put_contents($workflow_file, json_encode($workflow_data, JSON_PRETTY_PRINT))) {
+                        throw new Exception('Failed to save workflow file');
+                    }
+                }
+                break;
+            }
+        }
+        
+        // Save updated config
+        if (!file_put_contents($config_file, json_encode($config_data, JSON_PRETTY_PRINT))) {
+            throw new Exception('Failed to save workflow configuration');
+        }
+        
+        wp_send_json_success('Prompts saved successfully');
+
+    } catch (Exception $e) {
+        wp_send_json_error($e->getMessage());
+    }
+}
+add_action('wp_ajax_save_workflow_prompts', 'handle_save_workflow_prompts');

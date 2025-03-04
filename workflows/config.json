@@ -1,7 +1,7 @@
 {
     "workflows": [
         {
-            "name": "Workflow_1741120954",
+            "name": "Workflow_1741121808",
             "description": "Imported ComfyUI workflow",
             "workflow": {
                 "3": {
@@ -109,8 +109,12 @@
                         "title": "Save Image"
                     }
                 }
+            },
+            "prompts": {
+                "positive": "beautiful scenery [category], artistic style",
+                "negative": "text, watermark, blur"
             }
         }
     ],
-    "default_workflow": "Workflow_1741120954"
+    "default_workflow": "Workflow_1741121808"
 }

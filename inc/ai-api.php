@@ -548,42 +548,109 @@ function fetch_comfyui_image_from_text($image_data) {
 
         $workflow_data = $workflow_config['workflow'];
         $prompt = [];
-        foreach ($workflow_data['nodes'] as $node) {
-            $node_id = strval($node['id']);
-            $prompt[$node_id] = [
-                'class_type' => $node['class_type'],
-                'inputs' => []
-            ];
 
-            if (isset($node['widgets_values']) && is_array($node['widgets_values'])) {
-                $widget_names = [
-                    'CheckpointLoaderSimple' => ['ckpt_name'],
-                    'EmptyLatentImage' => ['width', 'height', 'batch_size'],
-                    'CLIPTextEncode' => ['text'],
-                    'KSampler' => ['seed', 'control_after_generate', 'steps', 'cfg', 'sampler_name', 'scheduler', 'denoise'],
-                    'SaveImage' => ['filename_prefix']
+        // Handle different workflow formats
+        if (is_array($workflow_data) && !isset($workflow_data['nodes'])) {
+            // Flat structure (numeric keys)
+            foreach ($workflow_data as $node_id => $node) {
+                if (!isset($node['class_type'])) {
+                    continue;
+                }
+
+                $prompt[strval($node_id)] = [
+                    'class_type' => $node['class_type'],
+                    'inputs' => []
                 ];
-                $input_names = $widget_names[$node['class_type']] ?? [];
-                foreach ($input_names as $index => $name) {
-                    if (isset($node['widgets_values'][$index])) {
-                        $value = $node['widgets_values'][$index];
-                        if (is_string($value)) {
-                            $value = str_replace(['[category]', '[categorie]'], $category, $value);
+
+                // Handle text inputs for CLIPTextEncode nodes
+                if ($node['class_type'] === 'CLIPTextEncode') {
+                    $is_negative = isset($node['_meta']['title']) && 
+                                 strpos(strtolower($node['_meta']['title']), 'negative') !== false;
+                    
+                    $template = isset($workflow_config['prompts'][$is_negative ? 'negative' : 'positive']) 
+                        ? $workflow_config['prompts'][$is_negative ? 'negative' : 'positive']
+                        : ($is_negative ? 'blur, text, watermark' : 'beautiful [category], artistic style');
+
+                    $prompt[strval($node_id)]['inputs']['text'] = str_replace(
+                        ['[category]', '[categorie]'],
+                        $category,
+                        $template
+                    );
+                }
+
+                // Handle other inputs
+                if (isset($node['inputs'])) {
+                    foreach ($node['inputs'] as $input_name => $input_value) {
+                        if (is_array($input_value) && count($input_value) === 2) {
+                            // Connection reference [node_id, output_index]
+                            $prompt[strval($node_id)]['inputs'][$input_name] = [
+                                strval($input_value[0]), $input_value[1]
+                            ];
+                        } else {
+                            // Direct value
+                            $prompt[strval($node_id)]['inputs'][$input_name] = $input_value;
                         }
-                        $prompt[$node_id]['inputs'][$name] = $value;
                     }
                 }
             }
+        } else {
+            // Standard structure with 'nodes' array
+            foreach ($workflow_data['nodes'] as $node) {
+                $node_id = strval($node['id']);
+                $prompt[$node_id] = [
+                    'class_type' => $node['class_type'],
+                    'inputs' => []
+                ];
 
-            foreach ($node['inputs'] as $input) {
-                if (isset($input['link'])) {
-                    $link_id = $input['link'];
-                    foreach ($workflow_data['links'] as $link) {
-                        if ($link[0] === $link_id) {
-                            $source_node_id = strval($link[1]);
-                            $source_slot = $link[2];
-                            $prompt[$node_id]['inputs'][$input['name']] = [$source_node_id, $source_slot];
-                            break;
+                if (isset($node['widgets_values']) && is_array($node['widgets_values'])) {
+                    $widget_names = [
+                        'CheckpointLoaderSimple' => ['ckpt_name'],
+                        'EmptyLatentImage' => ['width', 'height', 'batch_size'],
+                        'CLIPTextEncode' => ['text'],
+                        'KSampler' => ['seed', 'control_after_generate', 'steps', 'cfg', 'sampler_name', 'scheduler', 'denoise'],
+                        'SaveImage' => ['filename_prefix']
+                    ];
+                    
+                    // Handle CLIPTextEncode nodes specially
+                    if ($node['class_type'] === 'CLIPTextEncode') {
+                        $is_negative = isset($node['_meta']['title']) && 
+                                     strpos(strtolower($node['_meta']['title']), 'negative') !== false;
+                        
+                        $template = isset($workflow_config['prompts'][$is_negative ? 'negative' : 'positive']) 
+                            ? $workflow_config['prompts'][$is_negative ? 'negative' : 'positive']
+                            : ($is_negative ? 'blur, text, watermark' : 'beautiful [category], artistic style');
+
+                        $prompt[$node_id]['inputs']['text'] = str_replace(
+                            ['[category]', '[categorie]'],
+                            $category,
+                            $template
+                        );
+                    } else {
+                        // Handle other nodes' widget values
+                        $input_names = $widget_names[$node['class_type']] ?? [];
+                        foreach ($input_names as $index => $name) {
+                            if (isset($node['widgets_values'][$index])) {
+                                $value = $node['widgets_values'][$index];
+                                if (is_string($value)) {
+                                    $value = str_replace(['[category]', '[categorie]'], $category, $value);
+                                }
+                                $prompt[$node_id]['inputs'][$name] = $value;
+                            }
+                        }
+                    }
+                }
+
+                // Handle node connections
+                foreach ($node['inputs'] as $input) {
+                    if (isset($input['link'])) {
+                        $link_id = $input['link'];
+                        foreach ($workflow_data['links'] as $link) {
+                            if ($link[0] === $link_id) {
+                                $source_node_id = strval($link[1]);
+                                $source_slot = $link[2];
+                                $prompt[$node_id]['inputs'][$input['name']] = [$source_node_id, $source_slot];
+                                break;
+                            }
                         }
                     }
                 }
