@@ -472,6 +472,57 @@ function display_image_settings() {
     // ComfyUI Settings
     echo '<div class="comfyui-settings" style="display: ' . ($generation_type === 'comfyui' ? 'block' : 'none') . ';">';
     echo '<h3 style="margin-top: 0;">ComfyUI Settings</h3>';
+    
+    // Add workflow management section
+    echo '<div class="workflow-management" style="margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #ccc; border-radius: 4px;">';
+    echo '<h3 style="margin-top: 0;">Workflow Management</h3>';
+    
+    // Add upload workflow button
+    echo '<div class="upload-workflow" style="margin-bottom: 15px;">';
+    echo '<input type="file" id="workflow-upload" accept=".json" style="display: none;">';
+    echo '<button type="button" class="button" id="upload-workflow-btn">Upload New Workflow</button>';
+    echo '<span class="spinner" style="float: none; margin-left: 4px;"></span>';
+    echo '</div>';
+    
+    // Existing workflows section
+    echo '<div class="existing-workflows">';
+    echo '<h4 style="margin-top: 0;">Existing Workflows</h4>';
+    echo '<div class="workflow-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 15px; padding: 10px; background: #f8f9fa; border: 1px solid #e2e4e7; border-radius: 4px;">';
+    
+    // Load and display existing workflows
+    $workflows_json = file_get_contents(plugin_dir_path(__FILE__) . '../workflows/config.json');
+    $workflows_data = json_decode($workflows_json, true);
+    $workflows = isset($workflows_data['workflows']) ? $workflows_data['workflows'] : [];
+    
+    foreach ($workflows as $workflow) {
+        echo '<div class="workflow-item" style="display: flex; justify-content: space-between; align-items: center; padding: 8px; margin-bottom: 8px; background: #fff; border: 1px solid #e2e4e7; border-radius: 3px;">';
+        echo '<div class="workflow-info">';
+        echo '<strong>' . esc_html($workflow['name']) . '</strong><br>';
+        echo '<span class="description">' . esc_html($workflow['description']) . '</span>';
+        echo '</div>';
+        echo '<div class="workflow-actions">';
+        echo '<button type="button" class="button view-workflow" data-workflow="' . esc_attr($workflow['name']) . '">View</button> ';
+        echo '<button type="button" class="button button-link-delete delete-workflow" data-workflow="' . esc_attr($workflow['name']) . '">Delete</button>';
+        echo '</div>';
+        echo '</div>';
+    }
+    
+    echo '</div>'; // Close workflow-list
+    echo '</div>'; // Close existing-workflows
+    
+    // Workflow preview modal
+    echo '<div id="workflow-preview-modal" style="display: none; position: fixed; z-index: 100000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">';
+    echo '<div style="background-color: #fff; margin: 10% auto; padding: 20px; width: 80%; max-width: 800px; border-radius: 4px;">';
+    echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
+    echo '<h3 style="margin: 0;">Workflow Preview</h3>';
+    echo '<button type="button" class="button close-modal" style="padding: 0 10px;">×</button>';
+    echo '</div>';
+    echo '<pre id="workflow-content" style="max-height: 400px; overflow: auto; background: #f8f9fa; padding: 15px; border: 1px solid #e2e4e7; border-radius: 4px;"></pre>';
+    echo '</div>';
+    echo '</div>';
+    
+    echo '</div>'; // Close workflow-management
+
     echo '<table class="form-table">';
     
     // ComfyUI API URL
@@ -527,10 +578,123 @@ function display_image_settings() {
     
     echo '</div>'; // Close settings-section
 
-    // Updated JavaScript for toggling sections
+    // Updated JavaScript for toggles and workflow management
     ?>
     <script>
     jQuery(document).ready(function($) {
+        // Workflow Management
+        $('#upload-workflow-btn').click(function() {
+            $('#workflow-upload').click();
+        });
+
+        $('#workflow-upload').change(function() {
+            var file = this.files[0];
+            if (!file) return;
+
+            var reader = new FileReader();
+            var $spinner = $(this).closest('.upload-workflow').find('.spinner');
+            
+            reader.onload = function(e) {
+                try {
+                    // Validate JSON format
+                    var workflow = JSON.parse(e.target.result);
+                    if (!workflow.name || !workflow.description || !workflow.workflow) {
+                        throw new Error('Invalid workflow format. Must include name, description, and workflow.');
+                    }
+
+                    // Create form data
+                    var formData = new FormData();
+                    formData.append('action', 'upload_comfyui_workflow');
+                    formData.append('nonce', '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>');
+                    formData.append('workflow', e.target.result);
+                    
+                    // Show loading
+                    $spinner.addClass('is-active');
+                    
+                    // Upload workflow
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: formData,
+                        processData: false,
+                        contentType: false,
+                        success: function(response) {
+                            if (response.success) {
+                                location.reload(); // Refresh to show new workflow
+                            } else {
+                                alert('Error uploading workflow: ' + response.data);
+                            }
+                        },
+                        error: function() {
+                            alert('Upload failed. Please try again.');
+                        },
+                        complete: function() {
+                            $spinner.removeClass('is-active');
+                            $('#workflow-upload').val('');
+                        }
+                    });
+                } catch (error) {
+                    alert('Invalid workflow file: ' + error.message);
+                    $('#workflow-upload').val('');
+                }
+            };
+            
+            reader.readAsText(file);
+        });
+
+        // View workflow
+        $('.view-workflow').click(function() {
+            var workflow = $(this).data('workflow');
+            var $modal = $('#workflow-preview-modal');
+            var $content = $('#workflow-content');
+            
+            $.post(ajaxurl, {
+                action: 'get_comfyui_workflow',
+                workflow: workflow,
+                nonce: '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>'
+            }, function(response) {
+                if (response.success) {
+                    $content.text(JSON.stringify(response.data, null, 2));
+                    $modal.show();
+                } else {
+                    alert('Error loading workflow: ' + response.data);
+                }
+            });
+        });
+
+        // Close modal
+        $('.close-modal, #workflow-preview-modal').click(function(e) {
+            if (e.target === this) {
+                $('#workflow-preview-modal').hide();
+            }
+        });
+
+        // Delete workflow
+        $('.delete-workflow').click(function() {
+            if (!confirm('Are you sure you want to delete this workflow?')) return;
+            
+            var workflow = $(this).data('workflow');
+            var $item = $(this).closest('.workflow-item');
+            
+            $.post(ajaxurl, {
+                action: 'delete_comfyui_workflow',
+                workflow: workflow,
+                nonce: '<?php echo wp_create_nonce("ai_blogpost_nonce"); ?>'
+            }, function(response) {
+                if (response.success) {
+                    $item.slideUp(function() {
+                        $item.remove();
+                        // Reload if we deleted the last workflow
+                        if ($('.workflow-item').length === 0) {
+                            location.reload();
+                        }
+                    });
+                } else {
+                    alert('Error deleting workflow: ' + response.data);
+                }
+            });
+        });
+
         // Add transition styles
         $('<style>')
             .text(`
@@ -857,3 +1021,142 @@ function handle_comfyui_test() {
     }
 }
 add_action('wp_ajax_test_comfyui_connection', 'handle_comfyui_test');
+
+/**
+ * Handle workflow file upload
+ */
+function handle_workflow_upload() {
+    check_ajax_referer('ai_blogpost_nonce', 'nonce');
+    
+    try {
+        // Get and validate workflow data
+        $workflow_data = json_decode(stripslashes($_POST['workflow']), true);
+        if (!$workflow_data || !isset($workflow_data['name']) || !isset($workflow_data['description']) || !isset($workflow_data['workflow'])) {
+            throw new Exception('Invalid workflow format');
+        }
+
+        // Load existing config
+        $config_file = plugin_dir_path(__FILE__) . '../workflows/config.json';
+        $config_data = json_decode(file_get_contents($config_file), true);
+        if (!$config_data) {
+            $config_data = ['workflows' => [], 'default_workflow' => ''];
+        }
+
+        // Check if workflow name already exists
+        foreach ($config_data['workflows'] as $existing) {
+            if ($existing['name'] === $workflow_data['name']) {
+                throw new Exception('Workflow with this name already exists');
+            }
+        }
+
+        // Add new workflow
+        $config_data['workflows'][] = $workflow_data;
+        
+        // If this is the first workflow, set it as default
+        if (empty($config_data['default_workflow'])) {
+            $config_data['default_workflow'] = $workflow_data['name'];
+        }
+
+        // Save updated config
+        if (!file_put_contents($config_file, json_encode($config_data, JSON_PRETTY_PRINT))) {
+            throw new Exception('Failed to save workflow configuration');
+        }
+
+        // Create individual workflow file
+        $workflow_file = plugin_dir_path(__FILE__) . '../workflows/' . sanitize_file_name($workflow_data['name']) . '.json';
+        if (!file_put_contents($workflow_file, json_encode($workflow_data['workflow'], JSON_PRETTY_PRINT))) {
+            throw new Exception('Failed to save workflow file');
+        }
+
+        wp_send_json_success('Workflow uploaded successfully');
+
+    } catch (Exception $e) {
+        wp_send_json_error($e->getMessage());
+    }
+}
+add_action('wp_ajax_upload_comfyui_workflow', 'handle_workflow_upload');
+
+/**
+ * Handle workflow preview request
+ */
+function handle_get_workflow() {
+    check_ajax_referer('ai_blogpost_nonce', 'nonce');
+    
+    try {
+        $workflow_name = sanitize_text_field($_POST['workflow']);
+        $workflow_file = plugin_dir_path(__FILE__) . '../workflows/' . sanitize_file_name($workflow_name) . '.json';
+        
+        if (!file_exists($workflow_file)) {
+            throw new Exception('Workflow file not found');
+        }
+        
+        $workflow_data = json_decode(file_get_contents($workflow_file), true);
+        if (!$workflow_data) {
+            throw new Exception('Invalid workflow file');
+        }
+        
+        wp_send_json_success($workflow_data);
+
+    } catch (Exception $e) {
+        wp_send_json_error($e->getMessage());
+    }
+}
+add_action('wp_ajax_get_comfyui_workflow', 'handle_get_workflow');
+
+/**
+ * Handle workflow deletion
+ */
+function handle_delete_workflow() {
+    check_ajax_referer('ai_blogpost_nonce', 'nonce');
+    
+    try {
+        $workflow_name = sanitize_text_field($_POST['workflow']);
+        
+        // Load config
+        $config_file = plugin_dir_path(__FILE__) . '../workflows/config.json';
+        $config_data = json_decode(file_get_contents($config_file), true);
+        if (!$config_data) {
+            throw new Exception('Failed to load workflow configuration');
+        }
+        
+        // Find and remove workflow from config
+        $workflow_index = -1;
+        foreach ($config_data['workflows'] as $index => $workflow) {
+            if ($workflow['name'] === $workflow_name) {
+                $workflow_index = $index;
+                break;
+            }
+        }
+        
+        if ($workflow_index === -1) {
+            throw new Exception('Workflow not found in configuration');
+        }
+        
+        // Remove workflow from array
+        array_splice($config_data['workflows'], $workflow_index, 1);
+        
+        // If this was the default workflow, update default
+        if ($config_data['default_workflow'] === $workflow_name) {
+            $config_data['default_workflow'] = !empty($config_data['workflows']) 
+                ? $config_data['workflows'][0]['name'] 
+                : '';
+        }
+        
+        // Save updated config
+        if (!file_put_contents($config_file, json_encode($config_data, JSON_PRETTY_PRINT))) {
+            throw new Exception('Failed to update workflow configuration');
+        }
+        
+        // Delete workflow file
+        $workflow_file = plugin_dir_path(__FILE__) . '../workflows/' . sanitize_file_name($workflow_name) . '.json';
+        if (file_exists($workflow_file) && !unlink($workflow_file)) {
+            throw new Exception('Failed to delete workflow file');
+        }
+        
+        wp_send_json_success('Workflow deleted successfully');
+
+    } catch (Exception $e) {
+        wp_send_json_error($e->getMessage());
+    }
+}
+add_action('wp_ajax_delete_comfyui_workflow', 'handle_delete_workflow');
